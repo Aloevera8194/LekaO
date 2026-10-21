@@ -15,9 +15,22 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("fixa") {
+            storeFile = file("lekao.jks")
+            storePassword = "MINHASENHA"
+            keyAlias = "lekao"
+            keyPassword = "MINHASENHA"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("fixa")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("fixa")
         }
     }
     compileOptions {
