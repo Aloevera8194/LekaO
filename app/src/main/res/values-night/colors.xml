@@ -1,0 +1,10 @@
+<resources>
+    <color name="olive_primary">#B5C86A</color>
+    <color name="olive_on_primary">#263000</color>
+    <color name="olive_container">#3E4A12</color>
+    <color name="olive_on_container">#DDE7B3</color>
+    <color name="bg">#12140D</color>
+    <color name="surface">#1B1E14</color>
+    <color name="on_surface">#E3E4D6</color>
+    <color name="canvas_surround">#0B0D08</color>
+</resources>

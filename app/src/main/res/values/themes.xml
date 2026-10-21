@@ -1,0 +1,18 @@
+<resources>
+    <style name="Theme.LekaO" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/olive_primary</item>
+        <item name="colorOnPrimary">@color/olive_on_primary</item>
+        <item name="colorPrimaryContainer">@color/olive_container</item>
+        <item name="colorOnPrimaryContainer">@color/olive_on_container</item>
+        <item name="colorSecondary">@color/olive_primary</item>
+        <item name="colorOnSecondary">@color/olive_on_primary</item>
+        <item name="colorSecondaryContainer">@color/olive_container</item>
+        <item name="colorOnSecondaryContainer">@color/olive_on_container</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/on_surface</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorOnBackground">@color/on_surface</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
+</resources>

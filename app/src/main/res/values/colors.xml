@@ -1,0 +1,11 @@
+<resources>
+    <color name="olive_primary">#5C6B2A</color>
+    <color name="olive_on_primary">#FFFFFF</color>
+    <color name="olive_container">#DDE7B3</color>
+    <color name="olive_on_container">#1B2300</color>
+    <color name="bg">#F5F6EC</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="on_surface">#1C1D17</color>
+    <color name="canvas_surround">#D9DCC8</color>
+    <color name="ic_launcher_background">#6B7A2F</color>
+</resources>
