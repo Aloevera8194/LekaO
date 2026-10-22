@@ -22,6 +22,7 @@ import android.widget.Toast
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -123,12 +124,19 @@ class DrawingView @JvmOverloads constructor(
     private var tapX = 0f
     private var tapY = 0f
 
-    // ---- Gesto de 2 dedos ----
+    // ---- Gestos de vários dedos ----
     private var gesture = false
     private var gestureInit = false
     private var gFx = 0f
     private var gFy = 0f
     private var gDist = 0f
+    private var gAngle = 0f
+    private var gTwist = 0f
+    private var rotating = false
+    private var maxPointers = 1
+    private var maxMove = 0f
+    private val startX = FloatArray(32)
+    private val startY = FloatArray(32)
 
     init {
         val rnd = java.util.Random(7)
@@ -211,11 +219,31 @@ class DrawingView @JvmOverloads constructor(
     // Toque
     // ------------------------------------------------------------------
 
+    private fun rememberStart(e: MotionEvent, index: Int) {
+        val id = e.getPointerId(index)
+        if (id in 0..31) {
+            startX[id] = e.getX(index)
+            startY[id] = e.getY(index)
+        }
+    }
+
+    private fun trackMove(e: MotionEvent) {
+        for (i in 0 until e.pointerCount) {
+            val id = e.getPointerId(i)
+            if (id in 0..31) {
+                maxMove = max(maxMove, hypot(e.getX(i) - startX[id], e.getY(i) - startY[id]))
+            }
+        }
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 gesture = false
                 gestureInit = false
+                maxPointers = 1
+                maxMove = 0f
+                rememberStart(e, 0)
                 if (tool == Tool.FILL || tool == Tool.PICKER) {
                     tapPending = true
                     tapX = e.x
@@ -225,16 +253,19 @@ class DrawingView @JvmOverloads constructor(
                 }
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
+                rememberStart(e, e.actionIndex)
                 if (e.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
                     tapPending = false
                     if (stroking) cancelStroke()
                     gesture = true
                     gestureInit = false
+                    maxPointers = max(maxPointers, e.pointerCount)
                 }
             }
             MotionEvent.ACTION_MOVE -> {
                 if (gesture) {
-                    if (e.pointerCount >= 2) panZoom(e)
+                    trackMove(e)
+                    if (e.pointerCount == 2) panZoom(e)
                 } else if (stroking) {
                     moveStroke(e)
                 } else if (tapPending) {
@@ -243,9 +274,14 @@ class DrawingView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_POINTER_UP -> gestureInit = false
             MotionEvent.ACTION_UP -> {
-                if (tapPending) {
+                if (gesture) {
+                    // toque rápido com 2 dedos = desfazer, com 3 dedos = refazer
+                    if (e.eventTime - e.downTime < 450 && maxMove < 35f) {
+                        if (maxPointers == 2) undo() else if (maxPointers == 3) redo()
+                    }
+                } else if (tapPending) {
                     tapPending = false
-                    if (!gesture) doTap(e.x, e.y)
+                    doTap(e.x, e.y)
                 } else if (stroking) {
                     endStroke(e)
                 }
@@ -276,10 +312,14 @@ class DrawingView @JvmOverloads constructor(
         val fx = (x0 + x1) / 2f
         val fy = (y0 + y1) / 2f
         val d = hypot(x1 - x0, y1 - y0)
+        val ang = Math.toDegrees(atan2((y1 - y0).toDouble(), (x1 - x0).toDouble())).toFloat()
         if (!gestureInit) {
             gFx = fx
             gFy = fy
             gDist = d
+            gAngle = ang
+            gTwist = 0f
+            rotating = false
             gestureInit = true
             return
         }
@@ -290,6 +330,18 @@ class DrawingView @JvmOverloads constructor(
             viewMatrix.postScale(sf, sf, gFx, gFy)
         }
         viewMatrix.postTranslate(fx - gFx, fy - gFy)
+
+        var da = ang - gAngle
+        while (da > 180f) da -= 360f
+        while (da < -180f) da += 360f
+        gAngle = ang
+        if (!rotating) {
+            gTwist += da
+            if (abs(gTwist) > 12f) rotating = true
+        } else {
+            viewMatrix.postRotate(da, fx, fy)
+        }
+
         gFx = fx
         gFy = fy
         gDist = d
