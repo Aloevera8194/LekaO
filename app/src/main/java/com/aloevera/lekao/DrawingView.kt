@@ -44,7 +44,7 @@ class DrawingView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     enum class Tool {
-        PENCIL, PEN, INK, MARKER, AIRBRUSH, WATERCOLOR, ERASER, FILL, PICKER,
+        PENCIL, PEN, INK, MARKER, AIRBRUSH, WATERCOLOR, ERASER, FILL, PICKER, TEXT,
         LINE, RECT, OVAL, RECT_FILL, OVAL_FILL
     }
 
@@ -71,6 +71,7 @@ class DrawingView @JvmOverloads constructor(
     var fillTolerance = 32
     var onHistoryChanged: (() -> Unit)? = null
     var onColorPicked: ((Int) -> Unit)? = null
+    var onTextRequested: ((Float, Float) -> Unit)? = null
     var dirtyState = false
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
@@ -137,7 +138,7 @@ class DrawingView @JvmOverloads constructor(
     private var shapeY0 = 0f
     private var prevShapeRect: Rect? = null
 
-    // ---- Toque simples (balde / conta-gotas) ----
+    // ---- Toque simples (balde / conta-gotas / texto) ----
     private var tapPending = false
     private var tapX = 0f
     private var tapY = 0f
@@ -270,7 +271,7 @@ class DrawingView @JvmOverloads constructor(
                 maxPointers = 1
                 maxMove = 0f
                 rememberStart(e, 0)
-                if (tool == Tool.FILL || tool == Tool.PICKER) {
+                if (tool == Tool.FILL || tool == Tool.PICKER || tool == Tool.TEXT) {
                     tapPending = true
                     tapX = e.x
                     tapY = e.y
@@ -380,7 +381,7 @@ class DrawingView @JvmOverloads constructor(
     }
 
     // ------------------------------------------------------------------
-    // Balde e conta-gotas
+    // Balde, conta-gotas e texto
     // ------------------------------------------------------------------
 
     private fun doTap(sx: Float, sy: Float) {
@@ -389,7 +390,11 @@ class DrawingView @JvmOverloads constructor(
         val x = pts[0].toInt()
         val y = pts[1].toInt()
         if (x < 0 || y < 0 || x >= DOC || y >= DOC) return
-        if (tool == Tool.FILL) floodFill(x, y) else pickColor(x, y)
+        when (tool) {
+            Tool.FILL -> floodFill(x, y)
+            Tool.TEXT -> onTextRequested?.invoke(pts[0], pts[1])
+            else -> pickColor(x, y)
+        }
     }
 
     private fun pickColor(x: Int, y: Int) {
@@ -492,6 +497,35 @@ class DrawingView @JvmOverloads constructor(
         layer.bitmap.setPixels(lp, 0, gw, gx0, gy0, gw, gh)
         val after = crop(layer.bitmap, rect)
         pushEdit(layer, rect, before, after)
+    }
+
+    fun drawText(text: String, x: Float, y: Float) {
+        if (text.isBlank()) return
+        val layer = layers[activeIndex]
+        if (!layer.visible) {
+            Toast.makeText(context, "A camada está oculta", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.color = Color.rgb(Color.red(color), Color.green(color), Color.blue(color))
+        p.alpha = brushOpacity * 255 / 100
+        p.textSize = (brushSize * 3f).coerceIn(24f, 600f)
+        val lines = text.split("\n")
+        val lh = p.fontSpacing
+        val fm = p.fontMetrics
+        var maxW = 0f
+        for (ln in lines) maxW = max(maxW, p.measureText(ln))
+        val left = max(0, floor(x - 2f).toInt())
+        val top = max(0, floor(y + fm.ascent - 2f).toInt())
+        val right = min(DOC, ceil(x + maxW + 2f).toInt())
+        val bottom = min(DOC, ceil(y + lh * (lines.size - 1) + fm.descent + 2f).toInt())
+        val r = Rect(left, top, right, bottom)
+        if (r.isEmpty) return
+        val before = crop(layer.bitmap, r)
+        val c = Canvas(layer.bitmap)
+        for ((i, ln) in lines.withIndex()) c.drawText(ln, x, y + i * lh, p)
+        val after = crop(layer.bitmap, r)
+        pushEdit(layer, r, before, after)
     }
 
     // ------------------------------------------------------------------

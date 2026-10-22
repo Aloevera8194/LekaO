@@ -15,7 +15,9 @@ import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -28,6 +30,8 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.view.WindowCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
+import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnUndo: MaterialButton
     private lateinit var btnRedo: MaterialButton
     private lateinit var btnColor: MaterialButton
+    private var currentId = ""
 
     private val pickImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) importImage(uri)
@@ -63,9 +68,29 @@ class MainActivity : AppCompatActivity() {
         btnRedo = findViewById(R.id.btnRedo)
         btnColor = findViewById(R.id.btnColor)
 
-        drawing.loadState(filesDir)
+        // ---- desenho atual (galeria) ----
+        var id = prefs().getString("current", null)
+        if (id == null) {
+            id = "d" + System.currentTimeMillis()
+            val old = File(filesDir, "state.txt")
+            if (old.exists()) {
+                val dir = dirOf(id)
+                dir.mkdirs()
+                filesDir.listFiles()?.forEach { f ->
+                    if (f.name == "state.txt" || (f.name.startsWith("layer_") && f.name.endsWith(".png"))) {
+                        f.renameTo(File(dir, f.name))
+                    }
+                }
+            }
+            prefs().edit().putString("current", id).apply()
+        }
+        currentId = id
+        drawing.loadState(dirOf(id))
+        drawing.dirtyState = false
+
         drawing.onHistoryChanged = { refreshHistoryButtons() }
         drawing.onColorPicked = { updateColorButton() }
+        drawing.onTextRequested = { x, y -> askText(x, y) }
         refreshHistoryButtons()
         updateColorButton()
 
@@ -77,7 +102,15 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnRotate).setOnClickListener { drawing.rotateView() }
         findViewById<View>(R.id.btnFlip).setOnClickListener { drawing.flipView() }
         findViewById<View>(R.id.btnFit).setOnClickListener { drawing.fitToScreen() }
-        findViewById<View>(R.id.btnNew).setOnClickListener { confirmNew() }
+
+        findViewById<MaterialButton>(R.id.btnNew).apply {
+            text = "Galeria"
+            setOnClickListener { showGalleryDialog() }
+        }
+
+        makeIconOnly(R.id.btnRotate, R.drawable.ic_rotate, "Girar 90 graus")
+        makeIconOnly(R.id.btnFlip, R.drawable.ic_flip, "Espelhar")
+        makeIconOnly(R.id.btnFit, R.drawable.ic_fit, "Ajustar à tela")
 
         val toolGroup = findViewById<MaterialButtonToggleGroup>(R.id.toolGroup)
         val toolMap = mutableMapOf(
@@ -107,18 +140,24 @@ class MainActivity : AppCompatActivity() {
         addTool("Nanquim", DrawingView.Tool.INK, 2)
         addTool("Ret. cheio", DrawingView.Tool.RECT_FILL, -1)
         addTool("Elipse cheia", DrawingView.Tool.OVAL_FILL, -1)
+        addTool("Texto", DrawingView.Tool.TEXT, -1)
 
         toolGroup.check(R.id.btnPen)
-        toolGroup.addOnButtonCheckedListener { _, id, checked ->
-            if (checked) toolMap[id]?.let { drawing.tool = it }
+        toolGroup.addOnButtonCheckedListener { _, bid, checked ->
+            if (checked) toolMap[bid]?.let { drawing.tool = it }
         }
 
+        // tamanho: escala suave de 1 a 300 (fino nos tamanhos pequenos, grande no final)
         val sizeLabel = findViewById<TextView>(R.id.sizeLabel)
-        findViewById<SeekBar>(R.id.sizeBar).onChange { p ->
-            val v = p + 1
+        val sizeBar = findViewById<SeekBar>(R.id.sizeBar)
+        sizeBar.onChange { p ->
+            val f = p / 100f
+            val v = 1 + Math.round(299f * f * f)
             drawing.brushSize = v.toFloat()
             sizeLabel.text = "Tamanho: $v"
         }
+        sizeBar.max = 100
+        sizeBar.progress = 18
 
         val opacityLabel = findViewById<TextView>(R.id.opacityLabel)
         findViewById<SeekBar>(R.id.opacityBar).onChange { p ->
@@ -142,10 +181,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        drawing.saveState(filesDir)
+        persistCurrent()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private fun makeIconOnly(id: Int, res: Int, desc: String) {
+        val b = findViewById<MaterialButton>(id)
+        b.text = ""
+        b.setIconResource(res)
+        b.iconPadding = 0
+        b.iconSize = dp(24)
+        b.contentDescription = desc
+        b.setPadding(dp(10), b.paddingTop, dp(10), b.paddingBottom)
+    }
 
     private fun refreshHistoryButtons() {
         btnUndo.isEnabled = drawing.canUndo
@@ -159,11 +208,135 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun confirmNew() {
+    // ------------------------------------------------------------------
+    // Galeria de desenhos
+    // ------------------------------------------------------------------
+
+    private fun prefs() = getSharedPreferences("lekao", MODE_PRIVATE)
+
+    private fun root(): File = File(filesDir, "drawings").also { it.mkdirs() }
+
+    private fun dirOf(id: String): File = File(root(), id)
+
+    private fun persistCurrent() {
+        if (!drawing.dirtyState) return
+        val dir = dirOf(currentId)
+        dir.mkdirs()
+        drawing.saveState(dir)
+        try {
+            val bmp = drawing.exportBitmap()
+            val thumb = Bitmap.createScaledBitmap(bmp, 256, 256, true)
+            FileOutputStream(File(dir, "thumb.png")).use { thumb.compress(Bitmap.CompressFormat.PNG, 90, it) }
+            if (thumb !== bmp) thumb.recycle()
+            bmp.recycle()
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun switchTo(id: String) {
+        persistCurrent()
+        currentId = id
+        prefs().edit().putString("current", id).apply()
+        drawing.newDocument()
+        drawing.loadState(dirOf(id))
+        drawing.dirtyState = false
+    }
+
+    private fun showGalleryDialog() {
+        persistCurrent()
+        val pad = dp(12)
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, 0)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Galeria")
+            .setView(ScrollView(this).apply { addView(list) })
+            .setPositiveButton("Novo desenho", null)
+            .setNegativeButton("Fechar", null)
+            .create()
+
+        fun rebuild() {
+            list.removeAllViews()
+            val dirs = root().listFiles()
+                ?.filter { File(it, "state.txt").exists() }
+                ?.sortedByDescending { File(it, "state.txt").lastModified() }
+                ?: emptyList()
+            if (dirs.isEmpty()) {
+                list.addView(TextView(this).apply {
+                    text = "Nenhum desenho salvo ainda."
+                    setPadding(dp(8), dp(12), dp(8), dp(12))
+                })
+            }
+            val fmt = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
+            for (d in dirs) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(4), dp(6), dp(4), dp(6))
+                }
+                val img = ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    setBackgroundColor(Color.WHITE)
+                }
+                val tf = File(d, "thumb.png")
+                if (tf.exists()) img.setImageBitmap(BitmapFactory.decodeFile(tf.path))
+                row.addView(img, LinearLayout.LayoutParams(dp(72), dp(72)))
+
+                val stamp = fmt.format(java.util.Date(File(d, "state.txt").lastModified()))
+                val label = TextView(this).apply {
+                    text = stamp + (if (d.name == currentId) "\n(aberto agora)" else "")
+                    textSize = 15f
+                    setPadding(dp(12), 0, 0, 0)
+                }
+                row.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+                row.addView(smallButton("🗑", 18f) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Apagar desenho")
+                        .setMessage("Apagar o desenho de $stamp? Não dá para desfazer.")
+                        .setPositiveButton("Apagar") { _, _ ->
+                            dirOf(d.name).deleteRecursively()
+                            if (d.name == currentId) {
+                                drawing.dirtyState = false
+                                switchTo("d" + System.currentTimeMillis())
+                            }
+                            rebuild()
+                        }
+                        .setNegativeButton("Cancelar", null)
+                        .show()
+                })
+
+                row.setOnClickListener {
+                    if (d.name != currentId) switchTo(d.name)
+                    dialog.dismiss()
+                }
+                list.addView(row)
+            }
+        }
+
+        rebuild()
+        dialog.show()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            switchTo("d" + System.currentTimeMillis())
+            dialog.dismiss()
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Texto
+    // ------------------------------------------------------------------
+
+    private fun askText(x: Float, y: Float) {
+        val input = EditText(this).apply {
+            hint = "Digite o texto"
+            minLines = 2
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
         AlertDialog.Builder(this)
-            .setTitle("Novo desenho")
-            .setMessage("O desenho atual será apagado. Se quiser guardar, salve em PNG antes.")
-            .setPositiveButton("Apagar e começar") { _, _ -> drawing.newDocument() }
+            .setTitle("Texto")
+            .setView(input)
+            .setPositiveButton("OK") { _, _ -> drawing.drawText(input.text.toString(), x, y) }
             .setNegativeButton("Cancelar", null)
             .show()
     }
@@ -448,7 +621,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------
-    // Salvar PNG na galeria (Imagens/LekaO)
+    // Salvar PNG na galeria do celular (Imagens/LekaO)
     // ------------------------------------------------------------------
 
     private fun savePng() {
