@@ -48,6 +48,34 @@
                 android:text="Cor" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnRotate"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Girar" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFlip"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Espelhar" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnFit"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Ajustar" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNew"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Novo" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSave"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
@@ -67,67 +95,185 @@
         android:layout_height="wrap_content"
         android:background="@color/surface"
         android:orientation="vertical"
-        android:padding="10dp">
+        android:paddingStart="10dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="6dp">
 
-        <com.google.android.material.button.MaterialButtonToggleGroup
-            android:id="@+id/toolGroup"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:selectionRequired="true"
-            app:singleSelection="true">
+            android:scrollbars="none">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPencil"
-                style="?attr/materialButtonOutlinedStyle"
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/toolGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPencil"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Lápis" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPen"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Caneta" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMarker"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Marcador" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAirbrush"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Aerógrafo" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEraser"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Borracha" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnFill"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Balde" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPicker"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Conta-gotas" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnLine"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Linha" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRect"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Retângulo" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnOval"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Elipse" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+        </HorizontalScrollView>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/sizeLabel"
+                android:layout_width="130dp"
+                android:layout_height="wrap_content"
+                android:text="Tamanho: 10"
+                android:textColor="@color/on_surface"
+                android:textSize="12sp" />
+
+            <SeekBar
+                android:id="@+id/sizeBar"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Lápis" />
+                android:max="79"
+                android:progress="9" />
+        </LinearLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPen"
-                style="?attr/materialButtonOutlinedStyle"
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/opacityLabel"
+                android:layout_width="130dp"
+                android:layout_height="wrap_content"
+                android:text="Opacidade: 100%"
+                android:textColor="@color/on_surface"
+                android:textSize="12sp" />
+
+            <SeekBar
+                android:id="@+id/opacityBar"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Caneta" />
+                android:max="99"
+                android:progress="99" />
+        </LinearLayout>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnEraser"
-                style="?attr/materialButtonOutlinedStyle"
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/smoothLabel"
+                android:layout_width="130dp"
+                android:layout_height="wrap_content"
+                android:text="Suavização: 0%"
+                android:textColor="@color/on_surface"
+                android:textSize="12sp" />
+
+            <SeekBar
+                android:id="@+id/smoothBar"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Borracha" />
-        </com.google.android.material.button.MaterialButtonToggleGroup>
+                android:max="100"
+                android:progress="0" />
+        </LinearLayout>
 
-        <TextView
-            android:id="@+id/sizeLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Tamanho: 10"
-            android:textColor="@color/on_surface" />
-
-        <SeekBar
-            android:id="@+id/sizeBar"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:max="79"
-            android:progress="9" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/opacityLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Opacidade: 100%"
-            android:textColor="@color/on_surface" />
+            <TextView
+                android:id="@+id/tolLabel"
+                android:layout_width="130dp"
+                android:layout_height="wrap_content"
+                android:text="Tolerância: 32"
+                android:textColor="@color/on_surface"
+                android:textSize="12sp" />
 
-        <SeekBar
-            android:id="@+id/opacityBar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="99"
-            android:progress="99" />
+            <SeekBar
+                android:id="@+id/tolBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="100"
+                android:progress="32" />
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>

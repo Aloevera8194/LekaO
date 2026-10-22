@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
 
         drawing.loadState(filesDir)
         drawing.onHistoryChanged = { refreshHistoryButtons() }
+        drawing.onColorPicked = { updateColorButton() }
         refreshHistoryButtons()
         updateColorButton()
 
@@ -64,17 +65,27 @@ class MainActivity : AppCompatActivity() {
         btnColor.setOnClickListener { showColorDialog() }
         findViewById<View>(R.id.btnLayers).setOnClickListener { showLayersDialog() }
         findViewById<View>(R.id.btnSave).setOnClickListener { savePng() }
+        findViewById<View>(R.id.btnRotate).setOnClickListener { drawing.rotateView() }
+        findViewById<View>(R.id.btnFlip).setOnClickListener { drawing.flipView() }
+        findViewById<View>(R.id.btnFit).setOnClickListener { drawing.fitToScreen() }
+        findViewById<View>(R.id.btnNew).setOnClickListener { confirmNew() }
 
+        val toolMap = mapOf(
+            R.id.btnPencil to DrawingView.Tool.PENCIL,
+            R.id.btnPen to DrawingView.Tool.PEN,
+            R.id.btnMarker to DrawingView.Tool.MARKER,
+            R.id.btnAirbrush to DrawingView.Tool.AIRBRUSH,
+            R.id.btnEraser to DrawingView.Tool.ERASER,
+            R.id.btnFill to DrawingView.Tool.FILL,
+            R.id.btnPicker to DrawingView.Tool.PICKER,
+            R.id.btnLine to DrawingView.Tool.LINE,
+            R.id.btnRect to DrawingView.Tool.RECT,
+            R.id.btnOval to DrawingView.Tool.OVAL
+        )
         findViewById<MaterialButtonToggleGroup>(R.id.toolGroup).apply {
             check(R.id.btnPen)
             addOnButtonCheckedListener { _, id, checked ->
-                if (checked) {
-                    drawing.tool = when (id) {
-                        R.id.btnPencil -> DrawingView.Tool.PENCIL
-                        R.id.btnEraser -> DrawingView.Tool.ERASER
-                        else -> DrawingView.Tool.PEN
-                    }
-                }
+                if (checked) toolMap[id]?.let { drawing.tool = it }
             }
         }
 
@@ -90,6 +101,18 @@ class MainActivity : AppCompatActivity() {
             val v = p + 1
             drawing.brushOpacity = v
             opacityLabel.text = "Opacidade: $v%"
+        }
+
+        val smoothLabel = findViewById<TextView>(R.id.smoothLabel)
+        findViewById<SeekBar>(R.id.smoothBar).onChange { p ->
+            drawing.smoothing = p / 100f
+            smoothLabel.text = "Suavização: $p%"
+        }
+
+        val tolLabel = findViewById<TextView>(R.id.tolLabel)
+        findViewById<SeekBar>(R.id.tolBar).onChange { p ->
+            drawing.fillTolerance = p
+            tolLabel.text = "Tolerância: $p"
         }
     }
 
@@ -110,6 +133,15 @@ class MainActivity : AppCompatActivity() {
         btnColor.setTextColor(
             if (ColorUtils.calculateLuminance(drawing.color) > 0.5) Color.BLACK else Color.WHITE
         )
+    }
+
+    private fun confirmNew() {
+        AlertDialog.Builder(this)
+            .setTitle("Novo desenho")
+            .setMessage("O desenho atual será apagado. Se quiser guardar, salve em PNG antes.")
+            .setPositiveButton("Apagar e começar") { _, _ -> drawing.newDocument() }
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
     // ------------------------------------------------------------------

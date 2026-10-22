@@ -3,6 +3,8 @@ package com.aloevera.lekao
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
@@ -12,12 +14,14 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Toast
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -31,22 +35,30 @@ class DrawingView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    enum class Tool { PENCIL, PEN, ERASER }
+    enum class Tool { PENCIL, PEN, MARKER, AIRBRUSH, ERASER, FILL, PICKER, LINE, RECT, OVAL }
 
     companion object {
         const val DOC = 1600
         const val MAX_LAYERS = 8
         private const val MAX_UNDO = 30
+        private const val GRAIN = 128
     }
 
     // ---- Estado público ----
     val layers = mutableListOf<Layer>()
     var activeIndex = 0
     var tool = Tool.PEN
-    var color = Color.BLACK
+    var color: Int = Color.BLACK
+        set(value) {
+            field = value
+            grainDirty = true
+        }
     var brushSize = 10f
     var brushOpacity = 100
+    var smoothing = 0f
+    var fillTolerance = 32
     var onHistoryChanged: (() -> Unit)? = null
+    var onColorPicked: ((Int) -> Unit)? = null
     var dirtyState = false
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
@@ -64,7 +76,13 @@ class DrawingView @JvmOverloads constructor(
     private var backupBmp: Bitmap? = null
     private var activeCanvas: Canvas? = null
 
-    // ---- Visualização (zoom / mover) ----
+    // ---- Textura do lápis ----
+    private val grainAlpha = IntArray(GRAIN * GRAIN)
+    private val grainBmp: Bitmap = Bitmap.createBitmap(GRAIN, GRAIN, Bitmap.Config.ARGB_8888)
+    private var grainShader: BitmapShader? = null
+    private var grainDirty = true
+
+    // ---- Visualização (zoom / girar) ----
     private val viewMatrix = Matrix()
     private val inv = Matrix()
     private val docRect = RectF(0f, 0f, DOC.toFloat(), DOC.toFloat())
@@ -96,8 +114,16 @@ class DrawingView @JvmOverloads constructor(
     private var lastPressure = 1f
     private var hasDirty = false
     private val dirty = RectF()
+    private var shapeX0 = 0f
+    private var shapeY0 = 0f
+    private var prevShapeRect: Rect? = null
 
-    // ---- Estado do gesto de 2 dedos ----
+    // ---- Toque simples (balde / conta-gotas) ----
+    private var tapPending = false
+    private var tapX = 0f
+    private var tapY = 0f
+
+    // ---- Gesto de 2 dedos ----
     private var gesture = false
     private var gestureInit = false
     private var gFx = 0f
@@ -105,20 +131,52 @@ class DrawingView @JvmOverloads constructor(
     private var gDist = 0f
 
     init {
+        val rnd = java.util.Random(7)
+        for (i in grainAlpha.indices) grainAlpha[i] = 70 + rnd.nextInt(186)
         layers.add(Layer(newBitmap(), "Camada 1"))
     }
 
     private fun newBitmap(): Bitmap = Bitmap.createBitmap(DOC, DOC, Bitmap.Config.ARGB_8888)
 
+    private fun updateGrain() {
+        val rgb = color and 0x00FFFFFF
+        val px = IntArray(GRAIN * GRAIN) { (grainAlpha[it] shl 24) or rgb }
+        grainBmp.setPixels(px, 0, GRAIN, 0, 0, GRAIN, GRAIN)
+        grainShader = BitmapShader(grainBmp, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        grainDirty = false
+    }
+
+    private fun isShape(t: Tool) = t == Tool.LINE || t == Tool.RECT || t == Tool.OVAL
+
     // ------------------------------------------------------------------
-    // Layout / desenho na tela
+    // Visualização
     // ------------------------------------------------------------------
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        val s = min(w, h) / DOC.toFloat() * 0.96f
+    private fun fit() {
+        if (width == 0 || height == 0) return
+        val s = min(width, height) / DOC.toFloat() * 0.96f
         viewMatrix.reset()
         viewMatrix.postScale(s, s)
-        viewMatrix.postTranslate((w - DOC * s) / 2f, (h - DOC * s) / 2f)
+        viewMatrix.postTranslate((width - DOC * s) / 2f, (height - DOC * s) / 2f)
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        fit()
+    }
+
+    fun fitToScreen() {
+        fit()
+        invalidate()
+    }
+
+    fun rotateView() {
+        viewMatrix.postRotate(90f, width / 2f, height / 2f)
+        invalidate()
+    }
+
+    fun flipView() {
+        viewMatrix.postScale(-1f, 1f, width / 2f, height / 2f)
+        invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -142,7 +200,9 @@ class DrawingView @JvmOverloads constructor(
     }
 
     private fun prepComp(): Paint {
-        compPaint.alpha = brushOpacity * 255 / 100
+        var a = brushOpacity / 100f
+        if (activeTool == Tool.MARKER) a *= 0.6f
+        compPaint.alpha = (a * 255).toInt().coerceIn(0, 255)
         compPaint.xfermode = if (activeTool == Tool.ERASER) dstOut else null
         return compPaint
     }
@@ -156,10 +216,17 @@ class DrawingView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 gesture = false
                 gestureInit = false
-                startStroke(e)
+                if (tool == Tool.FILL || tool == Tool.PICKER) {
+                    tapPending = true
+                    tapX = e.x
+                    tapY = e.y
+                } else {
+                    startStroke(e)
+                }
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (e.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
+                    tapPending = false
                     if (stroking) cancelStroke()
                     gesture = true
                     gestureInit = false
@@ -170,15 +237,23 @@ class DrawingView @JvmOverloads constructor(
                     if (e.pointerCount >= 2) panZoom(e)
                 } else if (stroking) {
                     moveStroke(e)
+                } else if (tapPending) {
+                    if (hypot(e.x - tapX, e.y - tapY) > 40f) tapPending = false
                 }
             }
             MotionEvent.ACTION_POINTER_UP -> gestureInit = false
             MotionEvent.ACTION_UP -> {
-                if (stroking) endStroke(e)
+                if (tapPending) {
+                    tapPending = false
+                    if (!gesture) doTap(e.x, e.y)
+                } else if (stroking) {
+                    endStroke(e)
+                }
                 gesture = false
                 gestureInit = false
             }
             MotionEvent.ACTION_CANCEL -> {
+                tapPending = false
                 if (stroking) cancelStroke()
                 gesture = false
                 gestureInit = false
@@ -190,7 +265,7 @@ class DrawingView @JvmOverloads constructor(
     private fun currentScale(): Float {
         val v = FloatArray(9)
         viewMatrix.getValues(v)
-        return v[Matrix.MSCALE_X]
+        return hypot(v[Matrix.MSCALE_X], v[Matrix.MSKEW_Y])
     }
 
     private fun panZoom(e: MotionEvent) {
@@ -227,6 +302,118 @@ class DrawingView @JvmOverloads constructor(
     }
 
     // ------------------------------------------------------------------
+    // Balde e conta-gotas
+    // ------------------------------------------------------------------
+
+    private fun doTap(sx: Float, sy: Float) {
+        val pts = floatArrayOf(sx, sy)
+        toDoc(pts)
+        val x = pts[0].toInt()
+        val y = pts[1].toInt()
+        if (x < 0 || y < 0 || x >= DOC || y >= DOC) return
+        if (tool == Tool.FILL) floodFill(x, y) else pickColor(x, y)
+    }
+
+    private fun pickColor(x: Int, y: Int) {
+        val bmp = exportBitmap()
+        val c = bmp.getPixel(x, y)
+        bmp.recycle()
+        color = c or (0xFF shl 24)
+        onColorPicked?.invoke(color)
+    }
+
+    private fun floodFill(sx: Int, sy: Int) {
+        val layer = layers[activeIndex]
+        if (!layer.visible) {
+            Toast.makeText(context, "A camada está oculta", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val w = DOC
+        val h = DOC
+        val merged = exportBitmap()
+        val px = IntArray(w * h)
+        merged.getPixels(px, 0, w, 0, 0, w, h)
+        merged.recycle()
+
+        val t = px[sy * w + sx]
+        val tr = Color.red(t)
+        val tg = Color.green(t)
+        val tb = Color.blue(t)
+        val tol = fillTolerance
+
+        fun match(c: Int): Boolean =
+            abs(Color.red(c) - tr) <= tol && abs(Color.green(c) - tg) <= tol && abs(Color.blue(c) - tb) <= tol
+
+        val mask = BooleanArray(w * h)
+        val stack = java.util.ArrayDeque<Int>()
+        stack.push(sy * w + sx)
+        var minX = sx
+        var maxX = sx
+        var minY = sy
+        var maxY = sy
+
+        while (stack.isNotEmpty()) {
+            val idx = stack.pop()
+            if (mask[idx] || !match(px[idx])) continue
+            val y = idx / w
+            val row = y * w
+            var l = idx - row
+            while (l > 0 && !mask[row + l - 1] && match(px[row + l - 1])) l--
+            var r = idx - row
+            while (r < w - 1 && !mask[row + r + 1] && match(px[row + r + 1])) r++
+            for (x in l..r) mask[row + x] = true
+            if (l < minX) minX = l
+            if (r > maxX) maxX = r
+            if (y < minY) minY = y
+            if (y > maxY) maxY = y
+            for (ny in intArrayOf(y - 1, y + 1)) {
+                if (ny < 0 || ny >= h) continue
+                val nrow = ny * w
+                var inSpan = false
+                for (x in l..r) {
+                    val ok = !mask[nrow + x] && match(px[nrow + x])
+                    if (ok && !inSpan) {
+                        stack.push(nrow + x)
+                        inSpan = true
+                    } else if (!ok) {
+                        inSpan = false
+                    }
+                }
+            }
+        }
+
+        // cresce 1 pixel para cobrir a borda suave das linhas
+        val gx0 = max(0, minX - 1)
+        val gy0 = max(0, minY - 1)
+        val gx1 = min(w, maxX + 2)
+        val gy1 = min(h, maxY + 2)
+        val gw = gx1 - gx0
+        val gh = gy1 - gy0
+        val grown = BooleanArray(gw * gh)
+        for (y in gy0 until gy1) {
+            for (x in gx0 until gx1) {
+                val i = y * w + x
+                grown[(y - gy0) * gw + (x - gx0)] =
+                    mask[i] ||
+                        (x > 0 && mask[i - 1]) ||
+                        (x < w - 1 && mask[i + 1]) ||
+                        (y > 0 && mask[i - w]) ||
+                        (y < h - 1 && mask[i + w])
+            }
+        }
+
+        val rect = Rect(gx0, gy0, gx1, gy1)
+        val before = crop(layer.bitmap, rect)
+        val lp = IntArray(gw * gh)
+        layer.bitmap.getPixels(lp, 0, gw, gx0, gy0, gw, gh)
+        val fc = Color.rgb(Color.red(color), Color.green(color), Color.blue(color))
+        for (i in lp.indices) if (grown[i]) lp[i] = fc
+        layer.bitmap.setPixels(lp, 0, gw, gx0, gy0, gw, gh)
+        val after = crop(layer.bitmap, rect)
+        pushEdit(layer, rect, before, after)
+    }
+
+    // ------------------------------------------------------------------
     // Traço
     // ------------------------------------------------------------------
 
@@ -237,7 +424,10 @@ class DrawingView @JvmOverloads constructor(
         val w = when (activeTool) {
             Tool.PENCIL -> brushSize * 0.6f * (0.2f + 0.8f * p)
             Tool.PEN -> brushSize * (0.45f + 0.55f * p)
+            Tool.MARKER -> brushSize * 1.4f * (0.8f + 0.2f * p)
+            Tool.AIRBRUSH -> brushSize * 2f * (0.4f + 0.6f * p)
             Tool.ERASER -> brushSize * 1.5f * (0.5f + 0.5f * p)
+            else -> brushSize
         }
         return max(1f, w)
     }
@@ -251,6 +441,28 @@ class DrawingView @JvmOverloads constructor(
         }
     }
 
+    private fun configurePaint() {
+        strokePaint.shader = null
+        strokePaint.maskFilter = null
+        strokePaint.xfermode = null
+        val r = Color.red(color)
+        val g = Color.green(color)
+        val b = Color.blue(color)
+        when (activeTool) {
+            Tool.ERASER -> {
+                strokePaint.color = Color.BLACK
+                if (direct) strokePaint.xfermode = dstOut
+            }
+            Tool.PENCIL -> {
+                if (grainDirty) updateGrain()
+                strokePaint.color = Color.BLACK
+                strokePaint.shader = grainShader
+            }
+            Tool.AIRBRUSH -> strokePaint.color = Color.argb(70, r, g, b)
+            else -> strokePaint.color = Color.rgb(r, g, b)
+        }
+    }
+
     private fun startStroke(e: MotionEvent) {
         val layer = layers[activeIndex]
         if (!layer.visible) {
@@ -259,8 +471,11 @@ class DrawingView @JvmOverloads constructor(
         }
         activeTool = if (e.getToolType(0) == MotionEvent.TOOL_TYPE_ERASER) Tool.ERASER else tool
         stroking = true
-        direct = brushOpacity >= 100
         hasDirty = false
+        prevShapeRect = null
+        direct = brushOpacity >= 100 &&
+            (activeTool == Tool.PENCIL || activeTool == Tool.PEN ||
+                activeTool == Tool.AIRBRUSH || activeTool == Tool.ERASER)
 
         if (direct) {
             val b = backupBmp ?: newBitmap().also { backupBmp = it }
@@ -270,20 +485,17 @@ class DrawingView @JvmOverloads constructor(
             strokeBmp.eraseColor(Color.TRANSPARENT)
             activeCanvas = strokeCanvas
         }
-
-        if (activeTool == Tool.ERASER && direct) {
-            strokePaint.color = Color.BLACK
-            strokePaint.xfermode = dstOut
-        } else if (activeTool == Tool.ERASER) {
-            strokePaint.color = Color.BLACK
-            strokePaint.xfermode = null
-        } else {
-            strokePaint.color = Color.rgb(Color.red(color), Color.green(color), Color.blue(color))
-            strokePaint.xfermode = null
-        }
+        configurePaint()
 
         val pts = floatArrayOf(e.getX(0), e.getY(0))
         toDoc(pts)
+        if (isShape(activeTool)) {
+            shapeX0 = pts[0]
+            shapeY0 = pts[1]
+            invalidate()
+            return
+        }
+
         lastX = pts[0]
         lastY = pts[1]
         lastMidX = lastX
@@ -292,12 +504,19 @@ class DrawingView @JvmOverloads constructor(
 
         val w = widthFor(lastPressure)
         strokePaint.strokeWidth = w
+        if (activeTool == Tool.AIRBRUSH) {
+            strokePaint.maskFilter = BlurMaskFilter(max(1f, w * 0.5f), BlurMaskFilter.Blur.NORMAL)
+        }
         activeCanvas?.drawPoint(lastX, lastY, strokePaint)
-        addDirty(lastX, lastY, w / 2f + 2f)
+        addDirty(lastX, lastY, w / 2f + 2f + (if (activeTool == Tool.AIRBRUSH) w * 0.6f else 0f))
         invalidate()
     }
 
     private fun moveStroke(e: MotionEvent) {
+        if (isShape(activeTool)) {
+            updateShape(e.getX(0), e.getY(0))
+            return
+        }
         for (i in 0 until e.historySize) {
             addPoint(e.getHistoricalX(0, i), e.getHistoricalY(0, i), e.getHistoricalPressure(0, i), e)
         }
@@ -308,8 +527,9 @@ class DrawingView @JvmOverloads constructor(
     private fun addPoint(sx: Float, sy: Float, rawPressure: Float, e: MotionEvent) {
         val pts = floatArrayOf(sx, sy)
         toDoc(pts)
-        val x = pts[0]
-        val y = pts[1]
+        val k = 1f - smoothing * 0.92f
+        val x = lastX + (pts[0] - lastX) * k
+        val y = lastY + (pts[1] - lastY) * k
         val pressure = lastPressure * 0.6f + pressureOf(e, rawPressure) * 0.4f
         val mx = (lastX + x) / 2f
         val my = (lastY + y) / 2f
@@ -324,17 +544,51 @@ class DrawingView @JvmOverloads constructor(
     private fun drawQuad(x0: Float, y0: Float, cx: Float, cy: Float, x1: Float, y1: Float, w: Float) {
         val c = activeCanvas ?: return
         strokePaint.strokeWidth = w
+        var extra = 0f
+        if (activeTool == Tool.AIRBRUSH) {
+            strokePaint.maskFilter = BlurMaskFilter(max(1f, w * 0.5f), BlurMaskFilter.Blur.NORMAL)
+            extra = w * 0.6f
+        }
         path.reset()
         path.moveTo(x0, y0)
         path.quadTo(cx, cy, x1, y1)
         c.drawPath(path, strokePaint)
-        val r = w / 2f + 2f
+        val r = w / 2f + 2f + extra
         addDirty(x0, y0, r)
         addDirty(cx, cy, r)
         addDirty(x1, y1, r)
     }
 
+    private fun updateShape(sx: Float, sy: Float) {
+        val pts = floatArrayOf(sx, sy)
+        toDoc(pts)
+        val x1 = pts[0]
+        val y1 = pts[1]
+        prevShapeRect?.let { strokeCanvas.drawRect(it, clearPaint) }
+        strokePaint.strokeWidth = brushSize
+        val left = min(shapeX0, x1)
+        val top = min(shapeY0, y1)
+        val right = max(shapeX0, x1)
+        val bottom = max(shapeY0, y1)
+        when (activeTool) {
+            Tool.LINE -> strokeCanvas.drawLine(shapeX0, shapeY0, x1, y1, strokePaint)
+            Tool.RECT -> strokeCanvas.drawRect(left, top, right, bottom, strokePaint)
+            Tool.OVAL -> strokeCanvas.drawOval(RectF(left, top, right, bottom), strokePaint)
+            else -> {}
+        }
+        val r = brushSize / 2f + 3f
+        dirty.set(left - r, top - r, right + r, bottom + r)
+        hasDirty = true
+        prevShapeRect = clampRect()
+        invalidate()
+    }
+
     private fun endStroke(e: MotionEvent) {
+        if (isShape(activeTool)) {
+            updateShape(e.getX(0), e.getY(0))
+            commitStroke()
+            return
+        }
         moveStroke(e)
         drawQuad(lastMidX, lastMidY, lastX, lastY, lastX, lastY, widthFor(lastPressure))
         commitStroke()
@@ -352,6 +606,15 @@ class DrawingView @JvmOverloads constructor(
         val b = Bitmap.createBitmap(r.width(), r.height(), Bitmap.Config.ARGB_8888)
         Canvas(b).drawBitmap(src, r, Rect(0, 0, r.width(), r.height()), srcPaint)
         return b
+    }
+
+    private fun pushEdit(layer: Layer, r: Rect, before: Bitmap, after: Bitmap) {
+        undoStack.addLast(Edit(layer, r, before, after))
+        if (undoStack.size > MAX_UNDO) undoStack.removeFirst()
+        redoStack.clear()
+        dirtyState = true
+        onHistoryChanged?.invoke()
+        invalidate()
     }
 
     private fun commitStroke() {
@@ -372,12 +635,7 @@ class DrawingView @JvmOverloads constructor(
             strokeCanvas.drawRect(r, clearPaint)
         }
         val after = crop(layer.bitmap, r)
-        undoStack.addLast(Edit(layer, r, before, after))
-        if (undoStack.size > MAX_UNDO) undoStack.removeFirst()
-        redoStack.clear()
-        dirtyState = true
-        onHistoryChanged?.invoke()
-        invalidate()
+        pushEdit(layer, r, before, after)
     }
 
     private fun cancelStroke() {
@@ -389,6 +647,7 @@ class DrawingView @JvmOverloads constructor(
         } else {
             strokeBmp.eraseColor(Color.TRANSPARENT)
         }
+        prevShapeRect = null
         invalidate()
     }
 
@@ -418,7 +677,7 @@ class DrawingView @JvmOverloads constructor(
     }
 
     // ------------------------------------------------------------------
-    // Camadas
+    // Camadas e novo desenho
     // ------------------------------------------------------------------
 
     fun addLayer(): Boolean {
@@ -457,6 +716,20 @@ class DrawingView @JvmOverloads constructor(
             else -> activeIndex
         }
         dirtyState = true
+        invalidate()
+    }
+
+    fun newDocument() {
+        if (stroking) cancelStroke()
+        layers.clear()
+        layers.add(Layer(newBitmap(), "Camada 1"))
+        activeIndex = 0
+        nextLayerNumber = 2
+        undoStack.clear()
+        redoStack.clear()
+        dirtyState = true
+        fit()
+        onHistoryChanged?.invoke()
         invalidate()
     }
 
