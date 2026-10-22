@@ -3,8 +3,12 @@ package com.aloevera.lekao
 import android.content.ContentValues
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.drawable.GradientDrawable
+import android.media.ExifInterface
+import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
@@ -17,6 +21,7 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.ColorUtils
@@ -30,6 +35,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnUndo: MaterialButton
     private lateinit var btnRedo: MaterialButton
     private lateinit var btnColor: MaterialButton
+
+    private val pickImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) importImage(uri)
+    }
 
     private val palette = intArrayOf(
         Color.parseColor("#000000"), Color.parseColor("#FFFFFF"), Color.parseColor("#808080"),
@@ -70,7 +79,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnFit).setOnClickListener { drawing.fitToScreen() }
         findViewById<View>(R.id.btnNew).setOnClickListener { confirmNew() }
 
-        val toolMap = mapOf(
+        val toolGroup = findViewById<MaterialButtonToggleGroup>(R.id.toolGroup)
+        val toolMap = mutableMapOf(
             R.id.btnPencil to DrawingView.Tool.PENCIL,
             R.id.btnPen to DrawingView.Tool.PEN,
             R.id.btnMarker to DrawingView.Tool.MARKER,
@@ -82,11 +92,25 @@ class MainActivity : AppCompatActivity() {
             R.id.btnRect to DrawingView.Tool.RECT,
             R.id.btnOval to DrawingView.Tool.OVAL
         )
-        findViewById<MaterialButtonToggleGroup>(R.id.toolGroup).apply {
-            check(R.id.btnPen)
-            addOnButtonCheckedListener { _, id, checked ->
-                if (checked) toolMap[id]?.let { drawing.tool = it }
-            }
+
+        // ferramentas novas, criadas pelo código (a ordem importa: de trás para frente)
+        fun addTool(label: String, t: DrawingView.Tool, index: Int) {
+            val b = MaterialButton(
+                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            )
+            b.id = View.generateViewId()
+            b.text = label
+            toolMap[b.id] = t
+            if (index < 0) toolGroup.addView(b) else toolGroup.addView(b, index)
+        }
+        addTool("Aquarela", DrawingView.Tool.WATERCOLOR, 4)
+        addTool("Nanquim", DrawingView.Tool.INK, 2)
+        addTool("Ret. cheio", DrawingView.Tool.RECT_FILL, -1)
+        addTool("Elipse cheia", DrawingView.Tool.OVAL_FILL, -1)
+
+        toolGroup.check(R.id.btnPen)
+        toolGroup.addOnButtonCheckedListener { _, id, checked ->
+            if (checked) toolMap[id]?.let { drawing.tool = it }
         }
 
         val sizeLabel = findViewById<TextView>(R.id.sizeLabel)
@@ -142,6 +166,48 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Apagar e começar") { _, _ -> drawing.newDocument() }
             .setNegativeButton("Cancelar", null)
             .show()
+    }
+
+    // ------------------------------------------------------------------
+    // Importar imagem (vira uma camada nova)
+    // ------------------------------------------------------------------
+
+    private fun importImage(uri: Uri) {
+        try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (bounds.outWidth / sample > 3200 || bounds.outHeight / sample > 3200) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            var bmp: Bitmap? = contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, opts)
+            }
+            if (bmp == null) {
+                Toast.makeText(this, "Não consegui abrir a imagem", Toast.LENGTH_SHORT).show()
+                return
+            }
+            val orientation = contentResolver.openInputStream(uri)?.use {
+                ExifInterface(it).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
+                )
+            } ?: ExifInterface.ORIENTATION_NORMAL
+            val deg = when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+            if (deg != 0f) {
+                val m = Matrix().apply { postRotate(deg) }
+                bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+            }
+            if (!drawing.importBitmap(bmp)) {
+                Toast.makeText(this, "Máximo de ${DrawingView.MAX_LAYERS} camadas", Toast.LENGTH_SHORT).show()
+            }
+            bmp.recycle()
+        } catch (_: Exception) {
+            Toast.makeText(this, "Não consegui abrir a imagem", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ------------------------------------------------------------------
@@ -225,13 +291,14 @@ class MainActivity : AppCompatActivity() {
     // Camadas
     // ------------------------------------------------------------------
 
-    private fun smallButton(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
-        this.text = text
-        textSize = 20f
-        gravity = Gravity.CENTER
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        setOnClickListener { onClick() }
-    }
+    private fun smallButton(text: String, size: Float = 20f, onClick: () -> Unit): TextView =
+        TextView(this).apply {
+            this.text = text
+            textSize = size
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setOnClickListener { onClick() }
+        }
 
     private fun showLayersDialog() {
         val pad = dp(12)
@@ -242,15 +309,57 @@ class MainActivity : AppCompatActivity() {
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(
             ScrollView(this).apply { addView(list) },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260))
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(220))
         )
-        val opLabel = TextView(this).apply { setPadding(0, dp(12), 0, 0) }
-        val opBar = SeekBar(this).apply { max = 100 }
-        root.addView(opLabel)
-        root.addView(opBar)
 
         var updating = false
         var refreshAll: () -> Unit = {}
+        var dialogRef: AlertDialog? = null
+
+        val blendView = smallButton("", 14f) {
+            val l = drawing.layers[drawing.activeIndex]
+            l.blend = (l.blend + 1) % DrawingView.BLEND_NAMES.size
+            drawing.dirtyState = true
+            drawing.invalidate()
+            refreshAll()
+        }
+        val lockView = smallButton("", 14f) {
+            val l = drawing.layers[drawing.activeIndex]
+            l.lockAlpha = !l.lockAlpha
+            drawing.dirtyState = true
+            refreshAll()
+        }
+        val duplicateView = smallButton("Duplicar", 14f) {
+            if (!drawing.duplicateLayer()) {
+                Toast.makeText(this, "Máximo de ${DrawingView.MAX_LAYERS} camadas", Toast.LENGTH_SHORT).show()
+            }
+            refreshAll()
+        }
+        val mergeView = smallButton("Juntar com a de baixo", 14f) {
+            if (!drawing.mergeDown()) {
+                Toast.makeText(this, "Não há camada abaixo", Toast.LENGTH_SHORT).show()
+            }
+            refreshAll()
+        }
+        val importView = smallButton("Importar imagem", 14f) {
+            dialogRef?.dismiss()
+            pickImage.launch("image/*")
+        }
+
+        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row1.addView(duplicateView)
+        row1.addView(mergeView)
+        val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row2.addView(blendView)
+        row2.addView(lockView)
+        root.addView(row1)
+        root.addView(row2)
+        root.addView(importView)
+
+        val opLabel = TextView(this).apply { setPadding(0, dp(8), 0, 0) }
+        val opBar = SeekBar(this).apply { max = 100 }
+        root.addView(opLabel)
+        root.addView(opBar)
 
         fun syncOpacity() {
             val l = drawing.layers[drawing.activeIndex]
@@ -258,6 +367,8 @@ class MainActivity : AppCompatActivity() {
             opBar.progress = l.opacity
             updating = false
             opLabel.text = "Opacidade da camada: ${l.opacity}%"
+            blendView.text = "Modo: ${DrawingView.BLEND_NAMES[l.blend]}"
+            lockView.text = "Bloquear transparência: " + (if (l.lockAlpha) "sim" else "não")
         }
 
         fun rebuild() {
@@ -313,11 +424,12 @@ class MainActivity : AppCompatActivity() {
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("Camadas")
-            .setView(root)
+            .setView(ScrollView(this).apply { addView(root) })
             .setPositiveButton("Nova", null)
             .setNeutralButton("Excluir", null)
             .setNegativeButton("Fechar", null)
             .show()
+        dialogRef = dialog
 
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             if (!drawing.addLayer()) {
