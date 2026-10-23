@@ -255,6 +255,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Galeria")
             .setView(ScrollView(this).apply { addView(list) })
             .setPositiveButton("Novo desenho", null)
+            .setNeutralButton("Dicas", null)
             .setNegativeButton("Fechar", null)
             .create()
 
@@ -319,6 +320,10 @@ class MainActivity : AppCompatActivity() {
 
         rebuild()
         dialog.show()
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            dialog.dismiss()
+            showTips()
+        }
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             switchTo("d" + System.currentTimeMillis())
             dialog.dismiss()
@@ -383,6 +388,25 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             Toast.makeText(this, "Não consegui abrir a imagem", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Dicas
+    // ------------------------------------------------------------------
+
+    private fun showTips() {
+        val msg = "• Conta-gotas: toque na tela com ele para pegar uma cor do desenho.\n\n" +
+            "• Balde: ajuste a Tolerância para preencher áreas com cores parecidas.\n\n" +
+            "• Camadas: use Bloquear transparência para pintar sem sair do traço.\n\n" +
+            "• Modos de mesclagem: toque no botão de mesclagem na tela de Camadas.\n\n" +
+            "• Importar imagem: ela entra como uma camada nova.\n\n" +
+            "• Girar, espelhar e ajustar: ajudam a achar erros no desenho."
+        AlertDialog.Builder(this)
+            .setTitle("Dicas")
+            .setMessage(msg)
+            .setPositiveButton("Fechar", null)
+            .setNeutralButton("Rever introdução") { _, _ -> showOnboarding() }
+            .show()
     }
 
     // ------------------------------------------------------------------
@@ -721,6 +745,7 @@ class MainActivity : AppCompatActivity() {
         val bmp = drawing.exportBitmap()
         Thread {
             var ok = false
+            var savedUri: Uri? = null
             try {
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, "LekaO_${System.currentTimeMillis()}.png")
@@ -729,6 +754,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 if (uri != null) {
+                    savedUri = uri
                     contentResolver.openOutputStream(uri)?.use {
                         ok = bmp.compress(Bitmap.CompressFormat.PNG, 100, it)
                     }
@@ -736,12 +762,24 @@ class MainActivity : AppCompatActivity() {
             } catch (_: Exception) {
             }
             bmp.recycle()
+            val shareUri = savedUri
             runOnUiThread {
-                Toast.makeText(
-                    this,
-                    if (ok) "Salvo em Imagens/LekaO" else "Não consegui salvar",
-                    Toast.LENGTH_LONG
-                ).show()
+                if (ok && shareUri != null) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Salvo em Imagens/LekaO")
+                        .setPositiveButton("Compartilhar") { _, _ ->
+                            val it = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "image/png"
+                                putExtra(android.content.Intent.EXTRA_STREAM, shareUri)
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            startActivity(android.content.Intent.createChooser(it, "Compartilhar desenho"))
+                        }
+                        .setNegativeButton("Fechar", null)
+                        .show()
+                } else {
+                    Toast.makeText(this, "Não consegui salvar", Toast.LENGTH_LONG).show()
+                }
             }
         }.start()
     }
