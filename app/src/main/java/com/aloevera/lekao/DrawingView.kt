@@ -61,6 +61,7 @@ class DrawingView @JvmOverloads constructor(
     var activeIndex = 0
     var tool = Tool.PEN
     var color: Int = Color.BLACK
+    var symmetry = false
         set(value) {
             field = value
             grainDirty = true
@@ -639,6 +640,11 @@ class DrawingView @JvmOverloads constructor(
         applyBlur(w)
         activeCanvas?.drawPoint(lastX, lastY, strokePaint)
         addDirty(lastX, lastY, w / 2f + 2f + blurRadius(w) * 1.2f)
+        if (symmetry) {
+            val d = DOC.toFloat()
+            activeCanvas?.drawPoint(d - lastX, lastY, strokePaint)
+            addDirty(d - lastX, lastY, w / 2f + 2f + blurRadius(w) * 1.2f)
+        }
         invalidate()
     }
 
@@ -683,6 +689,16 @@ class DrawingView @JvmOverloads constructor(
         addDirty(x0, y0, r)
         addDirty(cx, cy, r)
         addDirty(x1, y1, r)
+        if (symmetry) {
+            val d = DOC.toFloat()
+            path.reset()
+            path.moveTo(d - x0, y0)
+            path.quadTo(d - cx, cy, d - x1, y1)
+            c.drawPath(path, strokePaint)
+            addDirty(d - x0, y0, r)
+            addDirty(d - cx, cy, r)
+            addDirty(d - x1, y1, r)
+        }
     }
 
     private fun updateShape(sx: Float, sy: Float) {

@@ -105,6 +105,19 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnFlip).setOnClickListener { drawing.flipView() }
         findViewById<View>(R.id.btnFit).setOnClickListener { drawing.fitToScreen() }
 
+        findViewById<MaterialButton>(R.id.btnFit).let { fit ->
+            val parent = fit.parent as ViewGroup
+            val sym = MaterialButton(
+                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            )
+            sym.text = "Simetria"
+            sym.setOnClickListener {
+                drawing.symmetry = !drawing.symmetry
+                sym.text = if (drawing.symmetry) "Simetria ✓" else "Simetria"
+            }
+            parent.addView(sym, parent.indexOfChild(fit) + 1)
+        }
+
         findViewById<MaterialButton>(R.id.btnNew).apply {
             text = "Galeria"
             setOnClickListener { showGalleryDialog() }
