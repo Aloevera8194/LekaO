@@ -94,6 +94,8 @@ class MainActivity : AppCompatActivity() {
         refreshHistoryButtons()
         updateColorButton()
 
+        if (!prefs().getBoolean("onboarded", false)) showOnboarding()
+
         btnUndo.setOnClickListener { drawing.undo() }
         btnRedo.setOnClickListener { drawing.redo() }
         btnColor.setOnClickListener { showColorDialog() }
@@ -381,6 +383,50 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             Toast.makeText(this, "Não consegui abrir a imagem", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Introdução (primeira vez que abre o app)
+    // ------------------------------------------------------------------
+
+    private fun showOnboarding() {
+        val pages = listOf(
+            "Desenhe" to "Escolha entre lápis, caneta, nanquim, aquarela e outras ferramentas. Ajuste tamanho, opacidade e suavização.",
+            "Camadas" to "Separe esboço, cores e detalhes em camadas. Dá para mudar a ordem, esconder e travar a transparência.",
+            "Cores" to "Misture a sua cor e reutilize as cores recentes que aparecem no seletor.",
+            "Galeria" to "Seus desenhos ficam guardados na Galeria. Quando terminar, salve em PNG em Imagens/LekaO."
+        )
+        var i = 0
+        val body = TextView(this).apply {
+            textSize = 17f
+            setPadding(dp(24), dp(20), dp(24), dp(8))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setView(body)
+            .setCancelable(false)
+            .setPositiveButton("Próximo", null)
+            .setNegativeButton("Pular", null)
+            .create()
+
+        fun finish() {
+            prefs().edit().putBoolean("onboarded", true).apply()
+            dialog.dismiss()
+        }
+
+        fun refresh() {
+            val dots = pages.indices.joinToString(" ") { if (it == i) "●" else "○" }
+            dialog.setTitle(pages[i].first + "   " + dots)
+            body.text = pages[i].second
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).text =
+                if (i == pages.size - 1) "Iniciar" else "Próximo"
+        }
+
+        dialog.show()
+        refresh()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            if (i >= pages.size - 1) finish() else { i++; refresh() }
+        }
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { finish() }
     }
 
     // ------------------------------------------------------------------
