@@ -384,6 +384,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------
+    // Cores recentes
+    // ------------------------------------------------------------------
+
+    private fun loadRecentColors(): MutableList<Int> =
+        (prefs().getString("recent_colors", "") ?: "")
+            .split(",").mapNotNull { it.toIntOrNull() }.toMutableList()
+
+    private fun addRecentColor(c: Int) {
+        val list = loadRecentColors()
+        list.remove(c)
+        list.add(0, c)
+        while (list.size > 14) list.removeAt(list.size - 1)
+        prefs().edit().putString("recent_colors", list.joinToString(",")).apply()
+    }
+
+    // ------------------------------------------------------------------
     // Cor
     // ------------------------------------------------------------------
 
@@ -449,11 +465,42 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(HorizontalScrollView(this).apply { addView(row) })
 
+        val recents = loadRecentColors()
+        if (recents.isNotEmpty()) {
+            root.addView(TextView(this).apply {
+                text = "Recentes"
+                setPadding(0, dp(4), 0, 0)
+            })
+            val rrow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(8), 0, dp(8))
+            }
+            for (c in recents) {
+                val sw = View(this).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(c)
+                        setStroke(dp(1), Color.GRAY)
+                    }
+                    setOnClickListener {
+                        Color.colorToHSV(c, hsv)
+                        bars[0]?.progress = hsv[0].toInt()
+                        bars[1]?.progress = (hsv[1] * 100).toInt()
+                        bars[2]?.progress = (hsv[2] * 100).toInt()
+                        refresh()
+                    }
+                }
+                rrow.addView(sw, LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) })
+            }
+            root.addView(HorizontalScrollView(this).apply { addView(rrow) })
+        }
+
         AlertDialog.Builder(this)
             .setTitle("Cor")
             .setView(root)
             .setPositiveButton("OK") { _, _ ->
                 drawing.color = Color.HSVToColor(hsv)
+                addRecentColor(drawing.color)
                 updateColorButton()
             }
             .setNegativeButton("Cancelar", null)
