@@ -62,6 +62,21 @@ class DrawingView @JvmOverloads constructor(
     var tool = Tool.PEN
     var color: Int = Color.BLACK
     var symmetry = false
+    private var holdX = 0f
+    private var holdY = 0f
+    private val holdRunnable = Runnable {
+        if (stroking && !gesture) {
+            cancelStroke()
+            val pts = floatArrayOf(holdX, holdY)
+            toDoc(pts)
+            val hx = pts[0].toInt()
+            val hy = pts[1].toInt()
+            if (hx in 0 until DOC && hy in 0 until DOC) {
+                pickColor(hx, hy)
+                performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            }
+        }
+    }
         set(value) {
             field = value
             grainDirty = true
@@ -278,9 +293,15 @@ class DrawingView @JvmOverloads constructor(
                     tapY = e.y
                 } else {
                     startStroke(e)
+                    if (stroking && !isShape(activeTool) && activeTool != Tool.ERASER) {
+                        holdX = e.x
+                        holdY = e.y
+                        postDelayed(holdRunnable, 500)
+                    }
                 }
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
+                removeCallbacks(holdRunnable)
                 rememberStart(e, e.actionIndex)
                 if (e.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
                     tapPending = false
@@ -295,6 +316,7 @@ class DrawingView @JvmOverloads constructor(
                     trackMove(e)
                     if (e.pointerCount == 2) panZoom(e)
                 } else if (stroking) {
+                    if (hypot(e.x - holdX, e.y - holdY) > 20f) removeCallbacks(holdRunnable)
                     moveStroke(e)
                 } else if (tapPending) {
                     if (hypot(e.x - tapX, e.y - tapY) > 40f) tapPending = false
@@ -302,6 +324,7 @@ class DrawingView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_POINTER_UP -> gestureInit = false
             MotionEvent.ACTION_UP -> {
+                removeCallbacks(holdRunnable)
                 if (gesture) {
                     // toque rápido com 2 dedos = desfazer, com 3 dedos = refazer
                     if (e.eventTime - e.downTime < 450 && maxMove < 35f) {
@@ -317,6 +340,7 @@ class DrawingView @JvmOverloads constructor(
                 gestureInit = false
             }
             MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(holdRunnable)
                 tapPending = false
                 if (stroking) cancelStroke()
                 gesture = false
