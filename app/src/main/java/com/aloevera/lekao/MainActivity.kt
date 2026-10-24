@@ -201,19 +201,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         // ---- ferramentas agrupadas (toque abre as opções) ----
-        val T = DrawingView.Tool
         val groups = listOf(
             "Pincéis" to listOf(
-                "Lápis" to T.PENCIL, "Caneta" to T.PEN, "Nanquim" to T.INK,
-                "Marcador" to T.MARKER, "Aerógrafo" to T.AIRBRUSH, "Aquarela" to T.WATERCOLOR
+                "Lápis" to DrawingView.Tool.PENCIL, "Caneta" to DrawingView.Tool.PEN, "Nanquim" to DrawingView.Tool.INK,
+                "Marcador" to DrawingView.Tool.MARKER, "Aerógrafo" to DrawingView.Tool.AIRBRUSH, "Aquarela" to DrawingView.Tool.WATERCOLOR
             ),
-            "Borracha" to listOf("Borracha" to T.ERASER),
-            "Cores" to listOf("Balde" to T.FILL, "Conta-gotas" to T.PICKER),
+            "Borracha" to listOf("Borracha" to DrawingView.Tool.ERASER),
+            "Cores" to listOf("Balde" to DrawingView.Tool.FILL, "Conta-gotas" to DrawingView.Tool.PICKER),
             "Formas" to listOf(
-                "Linha" to T.LINE, "Retângulo" to T.RECT, "Elipse" to T.OVAL,
-                "Ret. cheio" to T.RECT_FILL, "Elipse cheia" to T.OVAL_FILL
+                "Linha" to DrawingView.Tool.LINE, "Retângulo" to DrawingView.Tool.RECT, "Elipse" to DrawingView.Tool.OVAL,
+                "Ret. cheio" to DrawingView.Tool.RECT_FILL, "Elipse cheia" to DrawingView.Tool.OVAL_FILL
             ),
-            "Texto" to listOf("Texto" to T.TEXT)
+            "Texto" to listOf("Texto" to DrawingView.Tool.TEXT)
         )
         val groupBtns = mutableListOf<MaterialButton>()
         fun selectTool(gi: Int, label: String, t: DrawingView.Tool) {
@@ -261,7 +260,7 @@ class MainActivity : AppCompatActivity() {
             panel.indexOfChild(oldScroll)
         )
         oldScroll.visibility = View.GONE
-        selectTool(0, "Caneta", T.PEN)
+        selectTool(0, "Caneta", DrawingView.Tool.PEN)
 
         // tamanho: escala suave de 1 a 300 (fino nos tamanhos pequenos, grande no final)
         val sizeLabel = findViewById<TextView>(R.id.sizeLabel)
