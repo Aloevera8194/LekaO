@@ -156,6 +156,42 @@ class MainActivity : AppCompatActivity() {
             parent.addView(res, parent.indexOfChild(save))
         }
 
+        findViewById<View>(R.id.btnSave).let { save ->
+            val parent = save.parent as ViewGroup
+            val flt = MaterialButton(
+                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            )
+            flt.text = "Filtros"
+            flt.setOnClickListener {
+                val nomes = arrayOf(
+                    "Desfoque", "Mais brilho", "Menos brilho", "Mais contraste",
+                    "Preto e branco", "Inverter cores", "Limpar camada"
+                )
+                AlertDialog.Builder(this)
+                    .setTitle("Filtros (camada ativa)")
+                    .setItems(nomes) { _, which ->
+                        try {
+                            drawing.applyFilter(which)
+                        } catch (_: OutOfMemoryError) {
+                            Toast.makeText(this, "Sem memória", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .setNegativeButton("Fechar", null)
+                    .show()
+            }
+            val grid = MaterialButton(
+                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            )
+            grid.text = "Grade"
+            grid.setOnClickListener {
+                drawing.showGrid = !drawing.showGrid
+                grid.text = if (drawing.showGrid) "Grade ✓" else "Grade"
+                drawing.invalidate()
+            }
+            parent.addView(flt, parent.indexOfChild(save))
+            parent.addView(grid, parent.indexOfChild(save))
+        }
+
         findViewById<MaterialButton>(R.id.btnNew).apply {
             text = "Galeria"
             setOnClickListener { showGalleryDialog() }

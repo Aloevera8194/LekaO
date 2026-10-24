@@ -260,6 +260,14 @@ class DrawingView @JvmOverloads constructor(
             }
         }
         layerPaint.xfermode = null
+        if (showGrid) {
+            gridPaint.strokeWidth = docSize / 600f
+            val step = docSize / 8f
+            for (k in 1..7) {
+                canvas.drawLine(k * step, 0f, k * step, docSize.toFloat(), gridPaint)
+                canvas.drawLine(0f, k * step, docSize.toFloat(), k * step, gridPaint)
+            }
+        }
         canvas.restore()
     }
 
@@ -979,6 +987,47 @@ class DrawingView @JvmOverloads constructor(
         }
         dirtyState = true
         invalidate()
+    }
+
+    var showGrid = false
+    private val gridPaint = Paint().apply {
+        color = 0x88808080.toInt()
+        style = Paint.Style.STROKE
+    }
+
+    fun applyFilter(kind: Int) {
+        if (stroking) cancelStroke()
+        val layer = layers[activeIndex]
+        val r = Rect(0, 0, docSize, docSize)
+        val before = crop(layer.bitmap, r)
+        val dst = layer.bitmap
+        val replace = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+            xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC)
+        }
+        fun matrix(m: FloatArray) {
+            val tmp = crop(dst, r)
+            replace.colorFilter = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix(m))
+            Canvas(dst).drawBitmap(tmp, 0f, 0f, replace)
+            replace.colorFilter = null
+            tmp.recycle()
+        }
+        when (kind) {
+            0 -> {
+                val tmp = crop(dst, r)
+                val small = Bitmap.createScaledBitmap(tmp, max(1, docSize / 8), max(1, docSize / 8), true)
+                Canvas(dst).drawBitmap(small, null, r, replace)
+                small.recycle()
+                tmp.recycle()
+            }
+            1 -> matrix(floatArrayOf(1f,0f,0f,0f,40f, 0f,1f,0f,0f,40f, 0f,0f,1f,0f,40f, 0f,0f,0f,1f,0f))
+            2 -> matrix(floatArrayOf(1f,0f,0f,0f,-40f, 0f,1f,0f,0f,-40f, 0f,0f,1f,0f,-40f, 0f,0f,0f,1f,0f))
+            3 -> matrix(floatArrayOf(1.3f,0f,0f,0f,-38f, 0f,1.3f,0f,0f,-38f, 0f,0f,1.3f,0f,-38f, 0f,0f,0f,1f,0f))
+            4 -> matrix(android.graphics.ColorMatrix().apply { setSaturation(0f) }.array)
+            5 -> matrix(floatArrayOf(-1f,0f,0f,0f,255f, 0f,-1f,0f,0f,255f, 0f,0f,-1f,0f,255f, 0f,0f,0f,1f,0f))
+            6 -> dst.eraseColor(Color.TRANSPARENT)
+        }
+        val after = crop(dst, r)
+        pushEdit(layer, r, before, after)
     }
 
     private fun applySize(n: Int) {
