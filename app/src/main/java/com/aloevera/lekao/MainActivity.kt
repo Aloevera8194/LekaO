@@ -165,7 +165,8 @@ class MainActivity : AppCompatActivity() {
             flt.setOnClickListener {
                 val nomes = arrayOf(
                     "Desfoque", "Mais brilho", "Menos brilho", "Mais contraste",
-                    "Preto e branco", "Inverter cores", "Limpar camada"
+                    "Preto e branco", "Inverter cores", "Limpar camada",
+                    "Espelhar camada", "Girar camada 90°"
                 )
                 AlertDialog.Builder(this)
                     .setTitle("Filtros (camada ativa)")
@@ -328,6 +329,36 @@ class MainActivity : AppCompatActivity() {
             drawing.fillTolerance = p
             tolLabel.text = "Tolerância: $p"
         }
+
+        // ---- botões compactos que cabem na tela sem rolar ----
+        fun compactRow(row: LinearLayout, total: Int) {
+            val btns = (0 until row.childCount).mapNotNull { row.getChildAt(it) as? MaterialButton }
+            if (btns.isEmpty()) return
+            val w = total / btns.size
+            for (b in btns) {
+                b.insetTop = 0
+                b.insetBottom = 0
+                b.minWidth = 0
+                b.minimumWidth = 0
+                b.minHeight = 0
+                b.minimumHeight = dp(40)
+                b.setPadding(dp(2), dp(4), dp(2), dp(4))
+                b.maxLines = 1
+                b.isAllCaps = false
+                androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    b, 8, 13, 1, android.util.TypedValue.COMPLEX_UNIT_SP
+                )
+                b.layoutParams = LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+        }
+        btnUndo.text = "↶"
+        btnUndo.contentDescription = "Desfazer"
+        btnRedo.text = "↷"
+        btnRedo.contentDescription = "Refazer"
+        findViewById<MaterialButton>(R.id.btnSave).text = "Salvar"
+        val screenW = resources.displayMetrics.widthPixels
+        compactRow(btnUndo.parent as LinearLayout, screenW - dp(8))
+        compactRow(groupBar, screenW - dp(20))
     }
 
     override fun onStop() {

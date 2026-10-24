@@ -1025,6 +1025,15 @@ class DrawingView @JvmOverloads constructor(
             4 -> matrix(android.graphics.ColorMatrix().apply { setSaturation(0f) }.array)
             5 -> matrix(floatArrayOf(-1f,0f,0f,0f,255f, 0f,-1f,0f,0f,255f, 0f,0f,-1f,0f,255f, 0f,0f,0f,1f,0f))
             6 -> dst.eraseColor(Color.TRANSPARENT)
+            7, 8 -> {
+                val tmp = crop(dst, r)
+                val mt = Matrix()
+                val c = docSize / 2f
+                if (kind == 7) mt.postScale(-1f, 1f, c, c) else mt.postRotate(90f, c, c)
+                dst.eraseColor(Color.TRANSPARENT)
+                Canvas(dst).drawBitmap(tmp, mt, null)
+                tmp.recycle()
+            }
         }
         val after = crop(dst, r)
         pushEdit(layer, r, before, after)
