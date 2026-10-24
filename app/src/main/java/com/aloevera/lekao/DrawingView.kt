@@ -49,7 +49,7 @@ class DrawingView @JvmOverloads constructor(
     }
 
     companion object {
-        const val DOC = 1600
+        const val DEFAULT_DOC = 1600
         const val MAX_LAYERS = 8
         private const val MAX_UNDO = 30
         private const val GRAIN = 128
@@ -66,6 +66,7 @@ class DrawingView @JvmOverloads constructor(
             grainDirty = true
         }
     var symmetry = false
+    var docSize = DEFAULT_DOC
     private var holdX = 0f
     private var holdY = 0f
     private val holdRunnable = Runnable {
@@ -75,7 +76,7 @@ class DrawingView @JvmOverloads constructor(
             toDoc(pts)
             val hx = pts[0].toInt()
             val hy = pts[1].toInt()
-            if (hx in 0 until DOC && hy in 0 until DOC) {
+            if (hx in 0 until docSize && hy in 0 until docSize) {
                 pickColor(hx, hy)
                 performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
             }
@@ -100,8 +101,8 @@ class DrawingView @JvmOverloads constructor(
     private var nextLayerNumber = 2
 
     // ---- Bitmaps auxiliares ----
-    private val strokeBmp: Bitmap = Bitmap.createBitmap(DOC, DOC, Bitmap.Config.ARGB_8888)
-    private val strokeCanvas = Canvas(strokeBmp)
+    private var strokeBmp: Bitmap = Bitmap.createBitmap(docSize, docSize, Bitmap.Config.ARGB_8888)
+    private var strokeCanvas = Canvas(strokeBmp)
     private var backupBmp: Bitmap? = null
     private var activeCanvas: Canvas? = null
 
@@ -114,7 +115,7 @@ class DrawingView @JvmOverloads constructor(
     // ---- Visualização (zoom / girar) ----
     private val viewMatrix = Matrix()
     private val inv = Matrix()
-    private val docRect = RectF(0f, 0f, DOC.toFloat(), DOC.toFloat())
+    private val docRect = RectF(0f, 0f, docSize.toFloat(), docSize.toFloat())
 
     // ---- Paints ----
     private val surround = context.getColor(R.color.canvas_surround)
@@ -179,7 +180,7 @@ class DrawingView @JvmOverloads constructor(
         layers.add(Layer(newBitmap(), "Camada 1"))
     }
 
-    private fun newBitmap(): Bitmap = Bitmap.createBitmap(DOC, DOC, Bitmap.Config.ARGB_8888)
+    private fun newBitmap(): Bitmap = Bitmap.createBitmap(docSize, docSize, Bitmap.Config.ARGB_8888)
 
     private fun updateGrain() {
         val rgb = color and 0x00FFFFFF
@@ -198,10 +199,10 @@ class DrawingView @JvmOverloads constructor(
 
     private fun fit() {
         if (width == 0 || height == 0) return
-        val s = min(width, height) / DOC.toFloat() * 0.96f
+        val s = min(width, height) / docSize.toFloat() * 0.96f
         viewMatrix.reset()
         viewMatrix.postScale(s, s)
-        viewMatrix.postTranslate((width - DOC * s) / 2f, (height - DOC * s) / 2f)
+        viewMatrix.postTranslate((width - docSize * s) / 2f, (height - docSize * s) / 2f)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -414,7 +415,7 @@ class DrawingView @JvmOverloads constructor(
         toDoc(pts)
         val x = pts[0].toInt()
         val y = pts[1].toInt()
-        if (x < 0 || y < 0 || x >= DOC || y >= DOC) return
+        if (x < 0 || y < 0 || x >= docSize || y >= docSize) return
         when (tool) {
             Tool.FILL -> floodFill(x, y)
             Tool.TEXT -> onTextRequested?.invoke(pts[0], pts[1])
@@ -436,8 +437,8 @@ class DrawingView @JvmOverloads constructor(
             Toast.makeText(context, "A camada está oculta", Toast.LENGTH_SHORT).show()
             return
         }
-        val w = DOC
-        val h = DOC
+        val w = docSize
+        val h = docSize
         val merged = exportBitmap()
         val px = IntArray(w * h)
         merged.getPixels(px, 0, w, 0, 0, w, h)
@@ -542,8 +543,8 @@ class DrawingView @JvmOverloads constructor(
         for (ln in lines) maxW = max(maxW, p.measureText(ln))
         val left = max(0, floor(x - 2f).toInt())
         val top = max(0, floor(y + fm.ascent - 2f).toInt())
-        val right = min(DOC, ceil(x + maxW + 2f).toInt())
-        val bottom = min(DOC, ceil(y + lh * (lines.size - 1) + fm.descent + 2f).toInt())
+        val right = min(docSize, ceil(x + maxW + 2f).toInt())
+        val bottom = min(docSize, ceil(y + lh * (lines.size - 1) + fm.descent + 2f).toInt())
         val r = Rect(left, top, right, bottom)
         if (r.isEmpty) return
         val before = crop(layer.bitmap, r)
@@ -665,7 +666,7 @@ class DrawingView @JvmOverloads constructor(
         activeCanvas?.drawPoint(lastX, lastY, strokePaint)
         addDirty(lastX, lastY, w / 2f + 2f + blurRadius(w) * 1.2f)
         if (symmetry) {
-            val d = DOC.toFloat()
+            val d = docSize.toFloat()
             activeCanvas?.drawPoint(d - lastX, lastY, strokePaint)
             addDirty(d - lastX, lastY, w / 2f + 2f + blurRadius(w) * 1.2f)
         }
@@ -714,7 +715,7 @@ class DrawingView @JvmOverloads constructor(
         addDirty(cx, cy, r)
         addDirty(x1, y1, r)
         if (symmetry) {
-            val d = DOC.toFloat()
+            val d = docSize.toFloat()
             path.reset()
             path.moveTo(d - x0, y0)
             path.quadTo(d - cx, cy, d - x1, y1)
@@ -773,8 +774,8 @@ class DrawingView @JvmOverloads constructor(
     private fun clampRect(): Rect {
         val l = max(0, floor(dirty.left).toInt())
         val t = max(0, floor(dirty.top).toInt())
-        val r = min(DOC, ceil(dirty.right).toInt())
-        val b = min(DOC, ceil(dirty.bottom).toInt())
+        val r = min(docSize, ceil(dirty.right).toInt())
+        val b = min(docSize, ceil(dirty.bottom).toInt())
         return Rect(l, t, r, b)
     }
 
@@ -904,10 +905,10 @@ class DrawingView @JvmOverloads constructor(
     fun importBitmap(src: Bitmap): Boolean {
         if (layers.size >= MAX_LAYERS) return false
         val bmp = newBitmap()
-        val scale = min(DOC / src.width.toFloat(), DOC / src.height.toFloat())
+        val scale = min(docSize / src.width.toFloat(), docSize / src.height.toFloat())
         val w = src.width * scale
         val h = src.height * scale
-        val dst = RectF((DOC - w) / 2f, (DOC - h) / 2f, (DOC + w) / 2f, (DOC + h) / 2f)
+        val dst = RectF((docSize - w) / 2f, (docSize - h) / 2f, (docSize + w) / 2f, (docSize + h) / 2f)
         Canvas(bmp).drawBitmap(src, null, dst, bmpPaint)
         layers.add(activeIndex + 1, Layer(bmp, "Imagem ${nextLayerNumber++}"))
         activeIndex += 1
@@ -944,6 +945,44 @@ class DrawingView @JvmOverloads constructor(
         }
         dirtyState = true
         invalidate()
+    }
+
+    private fun applySize(n: Int) {
+        docSize = n
+        strokeBmp.recycle()
+        strokeBmp = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+        strokeCanvas = Canvas(strokeBmp)
+        backupBmp?.recycle()
+        backupBmp = null
+        docRect.set(0f, 0f, n.toFloat(), n.toFloat())
+        post { fit(); invalidate() }
+    }
+
+    fun resizeDocument(n: Int): Boolean {
+        if (n == docSize) return true
+        if (stroking) cancelStroke()
+        val novos = mutableListOf<Layer>()
+        try {
+            for (l in layers) {
+                val nb = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+                Canvas(nb).drawBitmap(l.bitmap, null, Rect(0, 0, n, n), bmpPaint)
+                novos.add(Layer(nb, l.name, l.visible, l.opacity, l.blend, l.lockAlpha))
+            }
+        } catch (_: OutOfMemoryError) {
+            novos.forEach { it.bitmap.recycle() }
+            return false
+        }
+        val antigos = layers.toList()
+        layers.clear()
+        layers.addAll(novos)
+        antigos.forEach { it.bitmap.recycle() }
+        applySize(n)
+        undoStack.clear()
+        redoStack.clear()
+        dirtyState = true
+        onHistoryChanged?.invoke()
+        invalidate()
+        return true
     }
 
     fun newDocument() {
@@ -1011,6 +1050,14 @@ class DrawingView @JvmOverloads constructor(
         try {
             val lines = f.readLines()
             val loaded = mutableListOf<Layer>()
+            val f0 = File(dir, "layer_0.png")
+            if (f0.exists()) {
+                val bo = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(f0.path, bo)
+                if (bo.outWidth == bo.outHeight && bo.outWidth in 256..4096 && bo.outWidth != docSize) {
+                    applySize(bo.outWidth)
+                }
+            }
             for (i in 1 until lines.size) {
                 val parts = lines[i].split("|", limit = 5)
                 val visible: Boolean
@@ -1038,7 +1085,7 @@ class DrawingView @JvmOverloads constructor(
                     inPreferredConfig = Bitmap.Config.ARGB_8888
                 }
                 val decoded = BitmapFactory.decodeFile(file.path, opts) ?: continue
-                val bmp = if (decoded.isMutable && decoded.width == DOC && decoded.height == DOC) {
+                val bmp = if (decoded.isMutable && decoded.width == docSize && decoded.height == docSize) {
                     decoded
                 } else {
                     newBitmap().also { Canvas(it).drawBitmap(decoded, 0f, 0f, srcPaint) }

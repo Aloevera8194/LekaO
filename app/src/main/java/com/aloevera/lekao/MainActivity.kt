@@ -118,6 +118,44 @@ class MainActivity : AppCompatActivity() {
             parent.addView(sym, parent.indexOfChild(fit) + 1)
         }
 
+        findViewById<View>(R.id.btnSave).let { save ->
+            val parent = save.parent as ViewGroup
+            val res = MaterialButton(
+                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            )
+            res.text = "Resolução"
+            res.setOnClickListener {
+                val sizes = intArrayOf(1024, 1600, 2048, 3000)
+                val names = sizes.map { "$it x $it" + (if (it == drawing.docSize) "  (atual)" else "") }
+                    .toTypedArray()
+                AlertDialog.Builder(this)
+                    .setTitle("Resolução do desenho")
+                    .setItems(names) { _, which ->
+                        val n = sizes[which]
+                        if (n != drawing.docSize) {
+                            AlertDialog.Builder(this)
+                                .setTitle("Mudar para $n x $n?")
+                                .setMessage(
+                                    "O desenho será redimensionado. Desfazer e refazer serão limpos. " +
+                                        "Tamanhos grandes gastam mais memória."
+                                )
+                                .setPositiveButton("Mudar") { _, _ ->
+                                    if (!drawing.resizeDocument(n)) {
+                                        Toast.makeText(
+                                            this, "Sem memória para esse tamanho", Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                                .setNegativeButton("Cancelar", null)
+                                .show()
+                        }
+                    }
+                    .setNegativeButton("Fechar", null)
+                    .show()
+            }
+            parent.addView(res, parent.indexOfChild(save))
+        }
+
         findViewById<MaterialButton>(R.id.btnNew).apply {
             text = "Galeria"
             setOnClickListener { showGalleryDialog() }
