@@ -330,6 +330,17 @@ class MainActivity : AppCompatActivity() {
             tolLabel.text = "Tolerância: $p"
         }
 
+        findViewById<View>(R.id.btnSave).let { save ->
+            val parent = save.parent as ViewGroup
+            val help = MaterialButton(
+                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            )
+            help.text = "?"
+            help.contentDescription = "Ajuda"
+            help.setOnClickListener { showHelp() }
+            parent.addView(help, parent.indexOfChild(save) + 1)
+        }
+
         // ---- botões compactos que cabem na tela sem rolar ----
         fun compactRow(row: LinearLayout, total: Int) {
             val btns = (0 until row.childCount).mapNotNull { row.getChildAt(it) as? MaterialButton }
@@ -571,6 +582,64 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------------
+    // Ajuda
+    // ------------------------------------------------------------------
+
+    private fun showHelp() {
+        val topics = listOf(
+            "Ferramentas" to "Os 5 botões de baixo são grupos. Toque em um com ▾ para abrir as opções.\n\n" +
+                "• Pincéis: lápis, caneta, nanquim, marcador, aerógrafo e aquarela.\n" +
+                "• Borracha: apaga na camada ativa.\n" +
+                "• Cores: balde, conta-gotas e degradê.\n" +
+                "• Formas: linha, retângulo e elipse (vazios ou cheios).\n" +
+                "• Texto: toque na folha e digite.",
+            "Tamanho, opacidade e suavização" to "• Tamanho: espessura do traço.\n" +
+                "• Opacidade: quanto o traço é transparente.\n" +
+                "• Suavização: alisa o traço, bom para linhas limpas.\n" +
+                "• Tolerância: usada pelo balde, define o quanto cores parecidas são preenchidas.",
+            "Cores" to "Toque no botão Cor para misturar por matiz, saturação e brilho, ou escolher na paleta. " +
+                "As cores usadas por último aparecem em Recentes.\n\n" +
+                "Conta-gotas rápido: com qualquer pincel, segure o dedo parado meio segundo sobre uma cor do desenho.",
+            "Camadas" to "Toque em Camadas para abrir a lista.\n\n" +
+                "• Nova / Excluir / Duplicar.\n" +
+                "• ▲ ▼ mudam a ordem.\n" +
+                "• 👁 mostra ou esconde.\n" +
+                "• ▫ / ✂ recorte: a camada só aparece dentro do desenho da camada de baixo, ótimo para colorir sem sair do traço.\n" +
+                "• Mesclagem muda como a camada se mistura com as de baixo.\n" +
+                "• Bloquear transparência: pinta só onde já tem tinta.",
+            "Gestos" to "• Dois dedos: mover e dar zoom.\n" +
+                "• Toque rápido com 2 dedos: desfazer.\n" +
+                "• Toque rápido com 3 dedos: refazer.\n" +
+                "• Botões Girar, Espelhar e Ajustar (canto da tela) mudam só a visão, não o desenho.",
+            "Simetria e grade" to "• Simetria: espelha o traço no centro da folha, ótimo para rostos.\n" +
+                "• Grade: linhas guia 8x8 para proporções. Não sai no PNG.",
+            "Filtros" to "O botão Filtros age só na camada ativa: desfoque, brilho, contraste, preto e branco, " +
+                "inverter cores, limpar, espelhar e girar a camada. Dá para desfazer.",
+            "Resolução" to "Escolha o tamanho da folha antes de começar a desenhar. Aumentar um desenho pronto deixa os traços " +
+                "mais borrados. Tamanhos grandes gastam mais memória.",
+            "Galeria e salvar" to "O desenho é guardado sozinho na Galeria. Salvar envia um PNG para Imagens/LekaO " +
+                "e depois oferece compartilhar."
+        )
+        val names = topics.map { it.first }.toTypedArray() + "Rever introdução"
+        AlertDialog.Builder(this)
+            .setTitle("Ajuda")
+            .setItems(names) { _, which ->
+                if (which == topics.size) {
+                    showOnboarding()
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle(topics[which].first)
+                        .setMessage(topics[which].second)
+                        .setPositiveButton("Voltar") { _, _ -> showHelp() }
+                        .setNegativeButton("Fechar", null)
+                        .show()
+                }
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
+    }
+
+    // ------------------------------------------------------------------
     // Dicas
     // ------------------------------------------------------------------
 
@@ -607,10 +676,12 @@ class MainActivity : AppCompatActivity() {
         }
         val dialog = AlertDialog.Builder(this)
             .setView(body)
-            .setCancelable(false)
+            .setCancelable(true)
             .setPositiveButton("Próximo", null)
             .setNegativeButton("Pular", null)
             .create()
+
+        dialog.setOnCancelListener { prefs().edit().putBoolean("onboarded", true).apply() }
 
         fun finish() {
             prefs().edit().putBoolean("onboarded", true).apply()
