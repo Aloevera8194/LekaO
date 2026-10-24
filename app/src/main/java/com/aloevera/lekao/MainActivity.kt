@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
                 "Marcador" to DrawingView.Tool.MARKER, "Aerógrafo" to DrawingView.Tool.AIRBRUSH, "Aquarela" to DrawingView.Tool.WATERCOLOR
             ),
             "Borracha" to listOf("Borracha" to DrawingView.Tool.ERASER),
-            "Cores" to listOf("Balde" to DrawingView.Tool.FILL, "Conta-gotas" to DrawingView.Tool.PICKER),
+            "Cores" to listOf("Balde" to DrawingView.Tool.FILL, "Conta-gotas" to DrawingView.Tool.PICKER, "Degradê" to DrawingView.Tool.GRADIENT),
             "Formas" to listOf(
                 "Linha" to DrawingView.Tool.LINE, "Retângulo" to DrawingView.Tool.RECT, "Elipse" to DrawingView.Tool.OVAL,
                 "Ret. cheio" to DrawingView.Tool.RECT_FILL, "Elipse cheia" to DrawingView.Tool.OVAL_FILL
@@ -792,6 +792,12 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 row.addView(name, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                row.addView(smallButton(if (l.clip) "✂" else "▫") {
+                    l.clip = !l.clip
+                    drawing.dirtyState = true
+                    drawing.invalidate()
+                    refreshAll()
+                })
                 row.addView(smallButton(if (l.visible) "👁" else "—") {
                     l.visible = !l.visible
                     drawing.dirtyState = true

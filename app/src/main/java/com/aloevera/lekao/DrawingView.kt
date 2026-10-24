@@ -35,7 +35,8 @@ class Layer(
     var visible: Boolean = true,
     var opacity: Int = 100,
     var blend: Int = 0,
-    var lockAlpha: Boolean = false
+    var lockAlpha: Boolean = false,
+    var clip: Boolean = false
 )
 
 class DrawingView @JvmOverloads constructor(
@@ -44,6 +45,7 @@ class DrawingView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     enum class Tool {
+        GRADIENT,
         PENCIL, PEN, INK, MARKER, AIRBRUSH, WATERCOLOR, ERASER, FILL, PICKER, TEXT,
         LINE, RECT, OVAL, RECT_FILL, OVAL_FILL
     }
@@ -123,6 +125,18 @@ class DrawingView @JvmOverloads constructor(
     private val layerPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val compPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val maskPaint = Paint().apply {
+        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+    }
+
+    private fun baseOf(i: Int): Layer? {
+        var j = i - 1
+        while (j >= 0) {
+            if (!layers[j].clip) return layers[j]
+            j--
+        }
+        return null
+    }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -190,7 +204,7 @@ class DrawingView @JvmOverloads constructor(
         grainDirty = false
     }
 
-    private fun isShape(t: Tool) =
+    private fun isShape(t: Tool) = t == Tool.GRADIENT ||
         t == Tool.LINE || t == Tool.RECT || t == Tool.OVAL || t == Tool.RECT_FILL || t == Tool.OVAL_FILL
 
     // ------------------------------------------------------------------
@@ -233,10 +247,13 @@ class DrawingView @JvmOverloads constructor(
             if (!l.visible) continue
             layerPaint.alpha = l.opacity * 255 / 100
             layerPaint.xfermode = blendModes[l.blend]
-            if (stroking && !direct && i == activeIndex) {
+            val live = stroking && !direct && i == activeIndex
+            val base = if (l.clip) baseOf(i) else null
+            if (live || base != null) {
                 canvas.saveLayer(docRect, layerPaint)
                 canvas.drawBitmap(l.bitmap, 0f, 0f, bmpPaint)
-                canvas.drawBitmap(strokeBmp, 0f, 0f, prepComp())
+                if (live) canvas.drawBitmap(strokeBmp, 0f, 0f, prepComp())
+                if (base != null) canvas.drawBitmap(base.bitmap, 0f, 0f, maskPaint)
                 canvas.restore()
             } else {
                 canvas.drawBitmap(l.bitmap, 0f, 0f, layerPaint)
@@ -738,6 +755,19 @@ class DrawingView @JvmOverloads constructor(
         val right = max(shapeX0, x1)
         val bottom = max(shapeY0, y1)
         when (activeTool) {
+            Tool.GRADIENT -> {
+                val gdx = x1 - shapeX0
+                val gdy = y1 - shapeY0
+                if (gdx * gdx + gdy * gdy > 4f) {
+                    val gp = Paint()
+                    gp.shader = android.graphics.LinearGradient(
+                        shapeX0, shapeY0, x1, y1,
+                        color, color and 0x00FFFFFF,
+                        android.graphics.Shader.TileMode.CLAMP
+                    )
+                    strokeCanvas.drawRect(0f, 0f, docSize.toFloat(), docSize.toFloat(), gp)
+                }
+            }
             Tool.LINE -> strokeCanvas.drawLine(shapeX0, shapeY0, x1, y1, strokePaint)
             Tool.RECT -> strokeCanvas.drawRect(left, top, right, bottom, strokePaint)
             Tool.OVAL -> strokeCanvas.drawOval(RectF(left, top, right, bottom), strokePaint)
@@ -754,7 +784,11 @@ class DrawingView @JvmOverloads constructor(
             else -> {}
         }
         val r = brushSize / 2f + 3f
-        dirty.set(left - r, top - r, right + r, bottom + r)
+        if (activeTool == Tool.GRADIENT) {
+            dirty.set(0f, 0f, docSize.toFloat(), docSize.toFloat())
+        } else {
+            dirty.set(left - r, top - r, right + r, bottom + r)
+        }
         hasDirty = true
         prevShapeRect = clampRect()
         invalidate()
@@ -966,7 +1000,7 @@ class DrawingView @JvmOverloads constructor(
             for (l in layers) {
                 val nb = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
                 Canvas(nb).drawBitmap(l.bitmap, null, Rect(0, 0, n, n), bmpPaint)
-                novos.add(Layer(nb, l.name, l.visible, l.opacity, l.blend, l.lockAlpha))
+                novos.add(Layer(nb, l.name, l.visible, l.opacity, l.blend, l.lockAlpha, l.clip))
             }
         } catch (_: OutOfMemoryError) {
             novos.forEach { it.bitmap.recycle() }
@@ -1007,11 +1041,19 @@ class DrawingView @JvmOverloads constructor(
         val out = newBitmap()
         val c = Canvas(out)
         c.drawColor(Color.WHITE)
-        for (l in layers) {
+        for ((i, l) in layers.withIndex()) {
             if (!l.visible) continue
             layerPaint.alpha = l.opacity * 255 / 100
             layerPaint.xfermode = blendModes[l.blend]
-            c.drawBitmap(l.bitmap, 0f, 0f, layerPaint)
+            val base = if (l.clip) baseOf(i) else null
+            if (base != null) {
+                c.saveLayer(docRect, layerPaint)
+                c.drawBitmap(l.bitmap, 0f, 0f, bmpPaint)
+                c.drawBitmap(base.bitmap, 0f, 0f, maskPaint)
+                c.restore()
+            } else {
+                c.drawBitmap(l.bitmap, 0f, 0f, layerPaint)
+            }
         }
         layerPaint.xfermode = null
         return out
@@ -1029,7 +1071,7 @@ class DrawingView @JvmOverloads constructor(
                 meta.append(if (l.visible) 1 else 0).append('|')
                     .append(l.opacity).append('|')
                     .append(l.blend).append('|')
-                    .append(if (l.lockAlpha) 1 else 0).append('|')
+                    .append((if (l.lockAlpha) 1 else 0) + (if (l.clip) 2 else 0)).append('|')
                     .append(l.name).append('\n')
             }
             File(dir, "state.txt").writeText(meta.toString())
@@ -1064,12 +1106,15 @@ class DrawingView @JvmOverloads constructor(
                 val opacity: Int
                 var blend = 0
                 var lock = false
+                var clip = false
                 val name: String
                 if (parts.size >= 5) {
                     visible = parts[0] == "1"
                     opacity = parts[1].toIntOrNull() ?: 100
                     blend = (parts[2].toIntOrNull() ?: 0).coerceIn(0, BLEND_NAMES.size - 1)
-                    lock = parts[3] == "1"
+                    val lv = parts[3].toIntOrNull() ?: 0
+                    lock = (lv and 1) != 0
+                    clip = (lv and 2) != 0
                     name = parts[4]
                 } else if (parts.size >= 3) {
                     visible = parts[0] == "1"
@@ -1090,7 +1135,7 @@ class DrawingView @JvmOverloads constructor(
                 } else {
                     newBitmap().also { Canvas(it).drawBitmap(decoded, 0f, 0f, srcPaint) }
                 }
-                loaded.add(Layer(bmp, name, visible, opacity, blend, lock))
+                loaded.add(Layer(bmp, name, visible, opacity, blend, lock, clip))
             }
             if (loaded.isNotEmpty()) {
                 layers.clear()
