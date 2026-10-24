@@ -1039,6 +1039,42 @@ class DrawingView @JvmOverloads constructor(
         pushEdit(layer, r, before, after)
     }
 
+    fun flattenVisible(): Boolean {
+        if (stroking) cancelStroke()
+        val vis = layers.indices.filter { layers[it].visible }
+        if (vis.size < 2) return false
+        val out = newBitmap()
+        val c = Canvas(out)
+        for (i in vis) {
+            val l = layers[i]
+            layerPaint.alpha = l.opacity * 255 / 100
+            layerPaint.xfermode = blendModes[l.blend]
+            val base = if (l.clip) baseOf(i) else null
+            if (base != null) {
+                c.saveLayer(docRect, layerPaint)
+                c.drawBitmap(l.bitmap, 0f, 0f, bmpPaint)
+                c.drawBitmap(base.bitmap, 0f, 0f, maskPaint)
+                c.restore()
+            } else {
+                c.drawBitmap(l.bitmap, 0f, 0f, layerPaint)
+            }
+        }
+        layerPaint.xfermode = null
+        undoStack.clear()
+        redoStack.clear()
+        val pos = vis.first()
+        for (i in vis.reversed()) {
+            layers[i].bitmap.recycle()
+            layers.removeAt(i)
+        }
+        layers.add(pos, Layer(out, "Mesclada"))
+        activeIndex = pos
+        dirtyState = true
+        onHistoryChanged?.invoke()
+        invalidate()
+        return true
+    }
+
     private fun applySize(n: Int) {
         docSize = n
         strokeBmp.recycle()

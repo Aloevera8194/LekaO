@@ -40,6 +40,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnRedo: MaterialButton
     private lateinit var btnColor: MaterialButton
     private var currentId = ""
+    private var fullscreen = false
+    private var exitBtn: MaterialButton? = null
+    private val autoHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val autoSave = object : Runnable {
+        override fun run() {
+            persistCurrent()
+            autoHandler.postDelayed(this, 120000)
+        }
+    }
 
     private val pickImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) importImage(uri)
@@ -161,18 +170,26 @@ class MainActivity : AppCompatActivity() {
             val flt = MaterialButton(
                 this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
             )
-            flt.text = "Filtros"
+            flt.text = "Mais"
             flt.setOnClickListener {
                 val nomes = arrayOf(
                     "Desfoque", "Mais brilho", "Menos brilho", "Mais contraste",
                     "Preto e branco", "Inverter cores", "Limpar camada",
-                    "Espelhar camada", "Girar camada 90°"
+                    "Espelhar camada", "Girar camada 90°", "Mesclar camadas visíveis", "Tela cheia"
                 )
                 AlertDialog.Builder(this)
-                    .setTitle("Filtros (camada ativa)")
+                    .setTitle("Mais opções")
                     .setItems(nomes) { _, which ->
                         try {
-                            drawing.applyFilter(which)
+                            when (which) {
+                                9 -> if (drawing.flattenVisible()) {
+                                    Toast.makeText(this, "Camadas mescladas", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(this, "Precisa de 2 camadas visíveis", Toast.LENGTH_SHORT).show()
+                                }
+                                10 -> setFullscreen(!fullscreen)
+                                else -> drawing.applyFilter(which)
+                            }
                         } catch (_: OutOfMemoryError) {
                             Toast.makeText(this, "Sem memória", Toast.LENGTH_SHORT).show()
                         }
@@ -341,6 +358,21 @@ class MainActivity : AppCompatActivity() {
             parent.addView(help, parent.indexOfChild(save) + 1)
         }
 
+        val exit = MaterialButton(
+            this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+        )
+        exit.text = "Sair da tela cheia"
+        exit.visibility = View.GONE
+        exit.setOnClickListener { setFullscreen(false) }
+        (drawing.parent as android.widget.FrameLayout).addView(
+            exit,
+            android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.END
+            ).apply { setMargins(dp(8), dp(8), dp(8), dp(8)) }
+        )
+        exitBtn = exit
+
         // ---- botões compactos que cabem na tela sem rolar ----
         fun compactRow(row: LinearLayout, total: Int) {
             val btns = (0 until row.childCount).mapNotNull { row.getChildAt(it) as? MaterialButton }
@@ -370,6 +402,16 @@ class MainActivity : AppCompatActivity() {
         val screenW = resources.displayMetrics.widthPixels
         compactRow(btnUndo.parent as LinearLayout, screenW - dp(8))
         compactRow(groupBar, screenW - dp(20))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        autoHandler.postDelayed(autoSave, 120000)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        autoHandler.removeCallbacks(autoSave)
     }
 
     override fun onStop() {
@@ -603,6 +645,7 @@ class MainActivity : AppCompatActivity() {
             "Camadas" to "Toque em Camadas para abrir a lista.\n\n" +
                 "• Nova / Excluir / Duplicar.\n" +
                 "• ▲ ▼ mudam a ordem.\n" +
+                "• Toque longo no nome: renomear.\n" +
                 "• 👁 mostra ou esconde.\n" +
                 "• ▫ / ✂ recorte: a camada só aparece dentro do desenho da camada de baixo, ótimo para colorir sem sair do traço.\n" +
                 "• Mesclagem muda como a camada se mistura com as de baixo.\n" +
@@ -637,6 +680,27 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Fechar", null)
             .show()
+    }
+
+    // ------------------------------------------------------------------
+    // Tela cheia
+    // ------------------------------------------------------------------
+
+    private fun setFullscreen(on: Boolean) {
+        fullscreen = on
+        val top = (btnUndo.parent as View).parent as View
+        val bottom = findViewById<View>(R.id.sizeBar).parent.parent as View
+        top.visibility = if (on) View.GONE else View.VISIBLE
+        bottom.visibility = if (on) View.GONE else View.VISIBLE
+        exitBtn?.visibility = if (on) View.VISIBLE else View.GONE
+        val ctrl = WindowCompat.getInsetsController(window, window.decorView)
+        if (on) {
+            ctrl.systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            ctrl.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        } else {
+            ctrl.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     // ------------------------------------------------------------------
@@ -712,6 +776,22 @@ class MainActivity : AppCompatActivity() {
         (prefs().getString("recent_colors", "") ?: "")
             .split(",").mapNotNull { it.toIntOrNull() }.toMutableList()
 
+    private fun loadFavColors(): MutableList<Int> =
+        (prefs().getString("fav_colors", "") ?: "")
+            .split(",").mapNotNull { it.toIntOrNull() }.toMutableList()
+
+    private fun addFavColor(c: Int) {
+        val list = loadFavColors()
+        if (!list.contains(c)) list.add(c)
+        prefs().edit().putString("fav_colors", list.joinToString(",")).apply()
+    }
+
+    private fun removeFavColor(c: Int) {
+        val list = loadFavColors()
+        list.remove(c)
+        prefs().edit().putString("fav_colors", list.joinToString(",")).apply()
+    }
+
     private fun addRecentColor(c: Int) {
         val list = loadRecentColors()
         list.remove(c)
@@ -767,6 +847,32 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(12), 0, dp(8))
         }
+        val hexBox = EditText(this).apply {
+            hint = "#RRGGBB"
+            setSingleLine(true)
+            setText(String.format("#%06X", 0xFFFFFF and Color.HSVToColor(hsv)))
+        }
+        hexBox.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(t: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(t: CharSequence?, st: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(e: android.text.Editable?) {
+                var t = e?.toString()?.trim() ?: return
+                if (!t.startsWith("#")) t = "#" + t
+                if (t.length != 7) return
+                try {
+                    val col = Color.parseColor(t)
+                    if ((0xFFFFFF and col) == (0xFFFFFF and Color.HSVToColor(hsv))) return
+                    Color.colorToHSV(col, hsv)
+                    bars[0]?.progress = hsv[0].toInt()
+                    bars[1]?.progress = (hsv[1] * 100).toInt()
+                    bars[2]?.progress = (hsv[2] * 100).toInt()
+                    refresh()
+                } catch (_: Exception) {
+                }
+            }
+        })
+        root.addView(hexBox)
+
         for (c in palette) {
             val sw = View(this).apply {
                 background = GradientDrawable().apply {
@@ -816,7 +922,42 @@ class MainActivity : AppCompatActivity() {
             root.addView(HorizontalScrollView(this).apply { addView(rrow) })
         }
 
-        AlertDialog.Builder(this)
+        val favs = loadFavColors()
+        if (favs.isNotEmpty()) {
+            root.addView(TextView(this).apply {
+                text = "Favoritas (segure para remover)"
+                setPadding(0, dp(4), 0, 0)
+            })
+            val frow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(8), 0, dp(8))
+            }
+            for (c in favs) {
+                val sw = View(this).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(c)
+                        setStroke(dp(1), Color.GRAY)
+                    }
+                    setOnClickListener {
+                        Color.colorToHSV(c, hsv)
+                        bars[0]?.progress = hsv[0].toInt()
+                        bars[1]?.progress = (hsv[1] * 100).toInt()
+                        bars[2]?.progress = (hsv[2] * 100).toInt()
+                        refresh()
+                    }
+                    setOnLongClickListener {
+                        removeFavColor(c)
+                        visibility = View.GONE
+                        true
+                    }
+                }
+                frow.addView(sw, LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) })
+            }
+            root.addView(HorizontalScrollView(this).apply { addView(frow) })
+        }
+
+        val colorDlg = AlertDialog.Builder(this)
             .setTitle("Cor")
             .setView(root)
             .setPositiveButton("OK") { _, _ ->
@@ -824,8 +965,13 @@ class MainActivity : AppCompatActivity() {
                 addRecentColor(drawing.color)
                 updateColorButton()
             }
+            .setNeutralButton("★ Favoritar", null)
             .setNegativeButton("Cancelar", null)
             .show()
+        colorDlg.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            addFavColor(Color.HSVToColor(hsv))
+            Toast.makeText(this, "Favoritada. Aparece na próxima vez que abrir a cor.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ------------------------------------------------------------------
@@ -927,6 +1073,27 @@ class MainActivity : AppCompatActivity() {
                     setOnClickListener {
                         drawing.activeIndex = i
                         refreshAll()
+                    }
+                    setOnLongClickListener {
+                        val input = EditText(this@MainActivity).apply {
+                            setText(l.name)
+                            setSelection(text.length)
+                            setPadding(dp(16), dp(12), dp(16), dp(12))
+                        }
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Renomear camada")
+                            .setView(input)
+                            .setPositiveButton("OK") { _, _ ->
+                                val nn = input.text.toString().trim()
+                                if (nn.isNotEmpty()) {
+                                    l.name = nn
+                                    drawing.dirtyState = true
+                                    refreshAll()
+                                }
+                            }
+                            .setNegativeButton("Cancelar", null)
+                            .show()
+                        true
                     }
                 }
                 row.addView(name, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
