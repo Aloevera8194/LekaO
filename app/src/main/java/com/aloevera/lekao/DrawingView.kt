@@ -61,6 +61,10 @@ class DrawingView @JvmOverloads constructor(
     var activeIndex = 0
     var tool = Tool.PEN
     var color: Int = Color.BLACK
+        set(value) {
+            field = value
+            grainDirty = true
+        }
     var symmetry = false
     private var holdX = 0f
     private var holdY = 0f
@@ -77,10 +81,6 @@ class DrawingView @JvmOverloads constructor(
             }
         }
     }
-        set(value) {
-            field = value
-            grainDirty = true
-        }
     var brushSize = 10f
     var brushOpacity = 100
     var smoothing = 0f

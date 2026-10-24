@@ -162,6 +162,69 @@ class MainActivity : AppCompatActivity() {
             if (checked) toolMap[bid]?.let { drawing.tool = it }
         }
 
+        // ---- ferramentas agrupadas (toque abre as opções) ----
+        val T = DrawingView.Tool
+        val groups = listOf(
+            "Pincéis" to listOf(
+                "Lápis" to T.PENCIL, "Caneta" to T.PEN, "Nanquim" to T.INK,
+                "Marcador" to T.MARKER, "Aerógrafo" to T.AIRBRUSH, "Aquarela" to T.WATERCOLOR
+            ),
+            "Borracha" to listOf("Borracha" to T.ERASER),
+            "Cores" to listOf("Balde" to T.FILL, "Conta-gotas" to T.PICKER),
+            "Formas" to listOf(
+                "Linha" to T.LINE, "Retângulo" to T.RECT, "Elipse" to T.OVAL,
+                "Ret. cheio" to T.RECT_FILL, "Elipse cheia" to T.OVAL_FILL
+            ),
+            "Texto" to listOf("Texto" to T.TEXT)
+        )
+        val groupBtns = mutableListOf<MaterialButton>()
+        fun selectTool(gi: Int, label: String, t: DrawingView.Tool) {
+            drawing.tool = t
+            for (k in groups.indices) {
+                val single = groups[k].second.size == 1
+                val sel = k == gi
+                groupBtns[k].text =
+                    if (sel) (if (single) label else "$label ▾")
+                    else (if (single) groups[k].first else groups[k].first + " ▾")
+                groupBtns[k].strokeWidth = if (sel) dp(3) else dp(1)
+            }
+        }
+        val groupBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for ((gi, g) in groups.withIndex()) {
+            val b = MaterialButton(
+                this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+            )
+            b.setOnClickListener {
+                if (g.second.size == 1) {
+                    selectTool(gi, g.second[0].first, g.second[0].second)
+                } else {
+                    val pm = android.widget.PopupMenu(this, b)
+                    g.second.forEachIndexed { idx, item -> pm.menu.add(0, idx, idx, item.first) }
+                    pm.setOnMenuItemClickListener { mi ->
+                        val item = g.second[mi.itemId]
+                        selectTool(gi, item.first, item.second)
+                        true
+                    }
+                    pm.show()
+                }
+            }
+            groupBtns.add(b)
+            groupBar.addView(b, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = dp(6) })
+        }
+        val oldScroll = toolGroup.parent as View
+        val panel = oldScroll.parent as ViewGroup
+        panel.addView(
+            HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(groupBar)
+            },
+            panel.indexOfChild(oldScroll)
+        )
+        oldScroll.visibility = View.GONE
+        selectTool(0, "Caneta", T.PEN)
+
         // tamanho: escala suave de 1 a 300 (fino nos tamanhos pequenos, grande no final)
         val sizeLabel = findViewById<TextView>(R.id.sizeLabel)
         val sizeBar = findViewById<SeekBar>(R.id.sizeBar)
